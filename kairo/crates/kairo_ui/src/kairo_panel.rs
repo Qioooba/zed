@@ -4,7 +4,7 @@
 
 use gpui::{
     App, AsyncWindowContext, Context, EventEmitter, FocusHandle, Focusable, SharedString, Subscription,
-    Task, Window, div, prelude::*, px,
+    Window, div, prelude::*, px,
 };
 use editor::Editor;
 use icons::IconName;

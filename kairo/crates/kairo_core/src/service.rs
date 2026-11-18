@@ -230,6 +230,9 @@ impl KairoService {
             bundled_dir: self.bundled_dir(),
             bind_address: "127.0.0.1".to_owned(),
             log_level: "info".to_owned(),
+            secret: std::env::var("KAIRO_LOCAL_SECRET")
+                .ok()
+                .filter(|value| !value.is_empty()),
             port: 0,
         };
         let executor = cx.background_executor().clone();
@@ -297,6 +300,9 @@ impl KairoService {
                         },
                         bind_address: "127.0.0.1".to_owned(),
                         log_level: "info".to_owned(),
+                        secret: std::env::var("KAIRO_LOCAL_SECRET")
+                            .ok()
+                            .filter(|value| !value.is_empty()),
                         port: 0,
                     };
                     let agent = spawn_agent(executor, config)

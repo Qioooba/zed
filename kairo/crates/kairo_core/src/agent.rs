@@ -18,6 +18,8 @@ pub struct AgentLaunchConfig {
     pub bundled_dir: Option<PathBuf>,
     pub bind_address: String,
     pub log_level: String,
+    /// Shared secret for a secured loopback agent (`-secret`).
+    pub secret: Option<String>,
     /// Ephemeral port (0) is strongly preferred so multiple workspaces and
     /// multiple Zed windows cannot collide with each other or with Kairo IDE.
     pub port: u16,
@@ -31,6 +33,7 @@ impl Default for AgentLaunchConfig {
             bundled_dir: None,
             bind_address: "127.0.0.1".to_owned(),
             log_level: "info".to_owned(),
+            secret: None,
             port: 0,
         }
     }
@@ -158,6 +161,9 @@ pub async fn spawn_agent(
         .arg(&config.data_dir)
         .arg("-log-level")
         .arg(&config.log_level);
+    if let Some(secret) = &config.secret {
+        command.arg("-secret").arg(secret);
+    }
     if let Some(bundled_dir) = &config.bundled_dir {
         command.arg("-bundled-dir").arg(bundled_dir);
     }
