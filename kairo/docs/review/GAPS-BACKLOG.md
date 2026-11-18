@@ -1,50 +1,59 @@
-# Gaps backlog — full implementation queue
+# Gaps backlog — implementation status
 
-> Working list kept while the 5 review agents run. Every item here will be
-> implemented (or explicitly proved as not applicable) before this round ends.
-> Severity/priority will be reconciled with `docs/review/0*-*.md` when they land.
+> Reconciled with review reports `01`–`05`. Items marked DONE are implemented
+> in commits after `5da1d9f`; verification is static until a Rust toolchain is
+> available.
 
-## A. Zed-side entry points declared but not wired
+## A. Zed-side entry points
 
-| # | Gap | Planned implementation |
-|---|-----|------------------------|
-| A1 | `kairo::OpenApplication` action has no handler | `kairo_ui::init` handler opens `server.url` via Zed's `OpenUrl` / `cx.open_url` |
-| A2 | `kairo::ScanProject` action has no handler | Handler calls `KairoService::scan_workspace` → `POST /workspaces/{id}/scan`, populates detected layout in panel |
-| A3 | `kairo::BuildAndDeploy` only compiles | Add `KairoService::build_and_deploy` chaining compile → poll build terminal state → deploy |
-| A4 | `kairo::HotDeploy` only calls deploy | Add `KairoService::hot_deploy` using `/jvm/compile` + `/deployments` + honestly surface `restart_required` |
-| A5 | `kairo::RestartServer` only calls refresh | Add `POST /servers/{id}/restart` client + service method |
+| # | Gap | Status | Evidence |
+|---|-----|--------|----------|
+| A1 | `OpenApplication` handler | **DONE** | `kairo_ui.rs` → `cx.open_url(server.url)` |
+| A2 | `ScanProject` handler | **DONE** | worktree root → `open_workspace` → `/scan` |
+| A3 | `BuildAndDeploy` only compiled | **DONE** | `KairoService::build_and_deploy` + `pending_deploy` consumed on build success |
+| A4 | `HotDeploy` was plain Deploy | **DONE** | `hot_deploy(java_file)` → `/jvm/compile` for `.java`, static deploy otherwise; honesty text `compileOnly → restart_required` |
+| A5 | `RestartServer` only refreshed | **DONE** | `restart_server` → `POST /servers/{id}/restart` |
+| A6 | `SelectProject`, `SaveWithEncoding`, `SearchEncoded`, `ReloadContext` missing | **DONE** | actions + handlers added |
 
-## B. Legacy-semantics gaps
+## B. Legacy semantics
 
-| # | Gap | Planned implementation |
-|---|-----|------------------------|
-| B1 | No GBK save hook — Zed buffers are UTF-8, saving a GBK file can corrupt it | Implement a save-routing service: on buffer save, detect encoding via `/encoding/detect`; for non-UTF-8, send bytes through `/encoding/recode` (atomic). Hook via Zed project save events if available, else provide explicit `kairo::SaveWithEncoding` action + settings guard |
-| B2 | Event stream absent (`subscribe_events` returns empty stream) | Implement WS `/api/v1/events` with `kairo-secret-v1` subprotocol using a real Zed websocket crate if available; otherwise keep 2 s poll but add explicit `event.gap` detection and log it |
-| B3 | Debug gate not checked | `KairoService::check_debug_adapter` calls `/debug/adapter/status`; `StartDebugServer` action verifies availability first and surfaces a clear message on failure |
-| B4 | `toolchain_incompatible` shown as generic error in panel | Add typed error display in `KairoPanel` with explicit "real JDK 6 required" guidance |
-| B5 | Hot-reload honesty not surfaced | Add `hot_reload_mode` / `restart_required` field to panel state from deploy result and compile-only events |
+| # | Gap | Status | Evidence |
+|---|-----|--------|----------|
+| B1 | No GBK save path | **DONE (explicit)** | `SaveWithEncoding` action → `/encoding/detect` → `/encoding/recode` (strict, atomic). Automatic Ctrl+S interception is **not** implemented (Zed has no will-save hook); panel shows current encoding so the user knows to use the command |
+| B2 | Event stream stub | **PARTIAL** | Bounded log polling with GPUI timers; `event.gap` / `snapshot.required` over WS not implemented (no WS client wired) |
+| B3 | Debug gate not checked | **DONE** | `start_server(debug=true)` checks `/debug/adapter/status` first, fails closed with message |
+| B4 | Fail-closed error invisible | **DONE** | `set_error` stores real code; build polling reads diagnostic codes; panel renders `ERROR:` line with JDK6 guidance |
+| B5 | Hot-reload honesty absent | **DONE** | `hot_reload_mode` shown in panel; `compileOnly → restart_required` |
+| B6 | Debug bridge never started | **DONE** | `spawn_debug_bridge` launches `java -jar kairo-jdi-bridge.jar 127.0.0.1 <port>`; DAP uses the agent-reported debug port |
+| B7 | Settings decorative | **DONE** | source/target/encoding pushed via `PUT /projects/{id}`; Java home/ports via `StartServerRequest`; panel shows all three slots |
 
-## C. Language intelligence gaps (P1/P2 from FEATURE-MATRIX)
+## C. Language intelligence
 
-| # | Gap | Planned implementation |
-|---|-----|------------------------|
-| C1 | JDT LS launch descriptor from agent unused by extension | Expose descriptor over a small agent endpoint/file and have `kairo-java` read `KAIRO_JDTLS_LAUNCHER`; add initialization options from descriptor |
-| C2 | JSP scriptlet completion / EL / TLD / JSP↔Servlet navigation | Requires a Kairo LSP proxy that maps JSP regions to virtual Java docs; implement as a new `kairo_jsp_ls` crate or extend the extension with a JSP language server that forwards to JDT LS (bounded scope: start with scriptlet completion + EL hover) |
-| C3 | JSP breakpoints (experimental) | `debugger.scm` query + CodeLens; lower priority, keep as P2 if not feasible |
+| # | Gap | Status | Evidence |
+|---|-----|--------|----------|
+| C1 | JDT LS automatic launch | **PARTIAL** | Extension supports `lsp.jdtls.binary` override; service calls `/jdtls/prepare`; automatic launch descriptor → extension handoff needs a host-file bridge (WASM cannot read host FS). User can configure binary once |
+| C2 | JSP scriptlet/EL/TLD completion | **PLANNED** (P2) | Requires Kairo LSP proxy mapping JSP regions to virtual Java docs |
+| C3 | JSP breakpoints | **PLANNED** (P3) | experimental in Kairo too |
 
-## D. Secondary Kairo features (P2/P3)
+## D. Secondary features
 
-| # | Gap | Planned implementation |
-|---|-----|------------------------|
-| D1 | SVN commands | Zed tasks wrapping `svn` CLI + keybindings (P3) |
-| D2 | Oracle SQL console | Agent `/sql/*` endpoints + a small SQL panel tab (P2) |
-| D3 | Maven view | Agent `/maven/*` endpoints + task provider (P2) |
-| D4 | Search routing for GBK projects | Route `/api/v1/search` when project encoding != UTF-8 (P1) |
-| D5 | i18n en/zh-CN status strings | Zed-owned locale files (P2) |
+| # | Gap | Status |
+|---|-----|--------|
+| D1 | SVN commands | PLANNED (P3) |
+| D2 | Oracle SQL console | PLANNED (P2; agent endpoints real) |
+| D3 | Maven view | PLANNED (P2; agent endpoints real) |
+| D4 | GBK search routing | DONE — `KairoService::search` sends `projectEncoding` to `/search` |
+| D5 | i18n en/zh-CN | PLANNED (P2) |
 
-## E. Process
+## E. Real-machine verification performed
 
-- [ ] Reconcile this list with the 5 reviewer reports.
-- [ ] Implement A + B first (core asks), then C, then D as time permits.
-- [ ] Commit each logical group with a clear message.
-- [ ] Re-review after fixes; update `PROGRESS.md`.
+- Real Zulu JDK 6 (`javac 1.6.0-119`) compiled `source/target=1.6` → 7 files, class major=50.
+- Real Tomcat 6 served JSP 200; JSP hot edit visible in 3 s without restart.
+- GBK detection on a real JSP: confidence 0.95, `eol=crlf`.
+- See `docs/VERIFICATION.md`.
+
+## F. Remaining hard blockers
+
+1. **Rust toolchain absent** — no `cargo`/`rustc`, so no compile proof. Last reviewer (01) will list static API issues; fix them before declaring done.
+2. **WASM ↔ host file bridge** — needed for automatic JDT LS launcher handoff.
+3. **Automatic Ctrl+S GBK interception** — needs an upstream save hook (would enlarge the patch surface); explicit command is the current safe path.
