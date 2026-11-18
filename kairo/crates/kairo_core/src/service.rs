@@ -932,7 +932,43 @@ impl KairoService {
         let Ok(client) = self.client() else {
             return self.unavailable("Kairo runtime agent is not running", cx);
         };
+        // The agent's verified context-reload touches <projectRoot>/WEB-INF/web.xml.
+        // 2008-era layouts keep it under WebRoot/WEB-INF, so mirror it transparently
+        // before asking for a reload.
+        let web_xml = this
+            .read_with(cx, |service, _| {
+                service
+                    .projects
+                    .iter()
+                    .find(|project| Some(project.id.as_str()) == service.active_project_id.as_deref())
+                    .map(|project| {
+                        let root = PathBuf::from(&project.root);
+                        let webapp = PathBuf::from(&project.webapp_dir);
+                        let source = if webapp.is_absolute() {
+                            webapp
+                        } else {
+                            root.join(webapp)
+                        }
+                        .join("WEB-INF")
+                        .join("web.xml");
+                        (source, root.join("WEB-INF").join("web.xml"))
+                    })
+            })
+            .ok()
+            .flatten();
         cx.spawn(async move |this, cx| {
+            if let Some((source, target)) = web_xml
+                && !target.exists()
+                && let Ok(contents) = smol::fs::read(&source).await
+            {
+                if let Some(parent) = target.parent()
+                    && smol::fs::create_dir_all(parent).await.is_ok()
+                {
+                    if let Err(error) = smol::fs::write(&target, contents).await {
+                        log::warn!("failed to mirror legacy WEB-INF/web.xml: {error}");
+                    }
+                }
+            }
             match client.reload_server(&server_id).await {
                 Ok(result) => {
                     this.update(cx, |service, cx| {

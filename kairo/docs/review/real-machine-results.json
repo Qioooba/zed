@@ -1,0 +1,194 @@
+[
+  {
+    "Name": "Agent cold start (ephemeral port + ready)",
+    "Ok": true,
+    "Ms": 172.4,
+    "Detail": "port=63347 pid=3712"
+  },
+  {
+    "Name": "Health",
+    "Ok": true,
+    "Ms": 43.5,
+    "Detail": "version=0.1.0 platform=windows/amd64"
+  },
+  {
+    "Name": "Endpoints discovery",
+    "Ok": true,
+    "Ms": 0.0,
+    "Detail": "http=127.0.0.1:63347"
+  },
+  {
+    "Name": "Import Zulu JDK 6",
+    "Ok": true,
+    "Ms": 344.5,
+    "Detail": "id=openjdk-1.6.0-119-aa6d249c levels=1.5,1.6,1.7,1.8,9,11,17"
+  },
+  {
+    "Name": "Import Zulu JDK 8",
+    "Ok": true,
+    "Ms": 281.6,
+    "Detail": "id=openjdk-1.8.0_504-b9cdcabc levels=1.5,1.6,1.7,1.8,9,11,17"
+  },
+  {
+    "Name": "Import Temurin JDK 21",
+    "Ok": true,
+    "Ms": 416.5,
+    "Detail": "id=openjdk-21.0.12-c5875936 levels=9,10,11,12,13,14,15,16,17,18,19,20,21,9,10,11,12,13,14,15,16,17,18,19,20,21,9,10,11,12,13,14,15,16,17,18,19,20,21"
+  },
+  {
+    "Name": "List toolchains",
+    "Ok": true,
+    "Ms": 3.2,
+    "Detail": "count=3"
+  },
+  {
+    "Name": "Open Chinese-path workspace",
+    "Ok": true,
+    "Ms": 6.3,
+    "Detail": "id=ws_dag3pjdvguel3wcdug3crofhki name=应用工程 中文"
+  },
+  {
+    "Name": "Scan Chinese-path layout",
+    "Ok": true,
+    "Ms": 0.0,
+    "Detail": "detected=1"
+  },
+  {
+    "Name": "Open project workspace",
+    "Ok": true,
+    "Ms": 4.2,
+    "Detail": "id=ws_ifdtjkpml6qb6rm2fauy2a6m6y"
+  },
+  {
+    "Name": "Scan legacy layout",
+    "Ok": true,
+    "Ms": 5.4,
+    "Detail": "detected=1 build=ant"
+  },
+  {
+    "Name": "Import project with source/target 1.6",
+    "Ok": true,
+    "Ms": 8.1,
+    "Detail": "id=project-real-jdk6-project"
+  },
+  {
+    "Name": "Project detection",
+    "Ok": true,
+    "Ms": 0.0,
+    "Detail": "src=src/main/java enc=gbk"
+  },
+  {
+    "Name": "Real javac build (source/target 1.6, JDK 6)",
+    "Ok": true,
+    "Ms": 1055.9,
+    "Detail": "state=success files=7 exit=0"
+  },
+  {
+    "Name": "Bytecode major version",
+    "Ok": true,
+    "Ms": 0.0,
+    "Detail": "major=50 (50 = Java 6)"
+  },
+  {
+    "Name": "Deploy to Tomcat 6",
+    "Ok": true,
+    "Ms": 93.7,
+    "Detail": "files=47 bytes=959702 mode=staticSync"
+  },
+  {
+    "Name": "Start real Tomcat 6",
+    "Ok": true,
+    "Ms": 1302.9,
+    "Detail": "id=srv_235f66f2 port=18082 pid=72536"
+  },
+  {
+    "Name": "Serve JSP (real Tomcat)",
+    "Ok": true,
+    "Ms": 324.7,
+    "Detail": "status=200 len=76"
+  },
+  {
+    "Name": "JSP hot reload (no restart)",
+    "Ok": true,
+    "Ms": 8094.1,
+    "Detail": "probe visible=True after 8094 ms"
+  },
+  {
+    "Name": "Server log tail",
+    "Ok": true,
+    "Ms": 0.0,
+    "Detail": "lines=16"
+  },
+  {
+    "Name": "Restart server",
+    "Ok": true,
+    "Ms": 16698.4,
+    "Detail": "state=running gen=2"
+  },
+  {
+    "Name": "Context reload",
+    "Ok": true,
+    "Ms": 0.0,
+    "Detail": "state=reloaded"
+  },
+  {
+    "Name": "Stop server",
+    "Ok": true,
+    "Ms": 0.0,
+    "Detail": "state=stopped"
+  },
+  {
+    "Name": "Detect GBK JSP",
+    "Ok": true,
+    "Ms": 0.0,
+    "Detail": "enc=gbk confidence=0.95 eol=crlf"
+  },
+  {
+    "Name": "Validate GBK representability",
+    "Ok": true,
+    "Ms": 0.0,
+    "Detail": "valid=True"
+  },
+  {
+    "Name": "Atomic recode UTF-8 → GBK",
+    "Ok": true,
+    "Ms": 0.0,
+    "Detail": "before=18 after=14"
+  },
+  {
+    "Name": "Encoding-aware search",
+    "Ok": true,
+    "Ms": 6.6,
+    "Detail": "matches=26 files=29 elapsedAgent=2ms"
+  },
+  {
+    "Name": "Debug adapter gate status",
+    "Ok": true,
+    "Ms": 0.0,
+    "Detail": "available= hostJdk="
+  },
+  {
+    "Name": "JDT LS status",
+    "Ok": true,
+    "Ms": 0.0,
+    "Detail": "state=stopped version=1.55.0"
+  },
+  {
+    "Name": "Port diagnostics",
+    "Ok": true,
+    "Ms": 0.0,
+    "Detail": "occupied=False"
+  },
+  {
+    "Name": "Audit log",
+    "Ok": true,
+    "Ms": 0.0,
+    "Detail": "events=0"
+  },
+  {
+    "Name": "Agent memory footprint",
+    "Ok": true,
+    "Ms": 0.0,
+    "Detail": "workingSet=21.3 MB private=26.8 MB"
+  }
+]
