@@ -139,6 +139,52 @@
 | i18n en/zh-CN | `i18n` (~5,500-line catalogs) | Zed's i18n (if any) or English-only first; keep status strings informational | P2 | Planned |
 | Themes (kairo-dark, kairo-idea-dark) | `ui-kit` | Zed theme files (Kairo-owned) | P3 | Planned |
 
+## 9b. 遗漏补录（来自 `review/10` 与 `review/11` 穷尽审计）
+
+> 目标：**任何 Kairo 能力都不静默遗漏**。以下条目此前未出现在矩阵中，
+> 现明确列出状态与处置。状态定义：DONE / PARTIAL / PLANNED / N/A（不适用，含理由）。
+
+### 后端端点类（83 端点审计补录）
+
+| 能力 | 端点 | 状态 | 处置 / 理由 |
+|------|------|------|-------------|
+| 动态端口发现 | `GET /endpoints` | N/A | Zed 自己以 `-port 0` 启动 agent，从 `agent-state.json` 读端口，无需再发现 |
+| Agent 自重启/端口交接 | `POST /runtime/restart` | N/A | Zed 拥有子进程，用 `ReconnectAgent` 重连；agent 自重启会孤立已跟踪的句柄 |
+| 旧版 projects/import 别名 | #9 | N/A | 与 #25 相同，Zed 直接调用 `/projects/import` |
+| 异步 LaunchJob 进度 | `GET /launch-jobs/{id}` | PLANNED | run-configuration 启动的进度行；当前用同步启动 |
+| 项目注销 | `DELETE /projects/{id}` | PLANNED (低) | 管理类操作，不影响遗留主流程 |
+| 部署历史 | `GET /deployments{,/{id}}` | PLANNED (低) | Zed 保留本次 DeployResult，历史非核心 |
+| 操作幂等状态 | `GET /operations/{id}` | N/A | 协议内部关注点；Zed 始终发送 requestId 信封 |
+| SSH 调试隧道 | #74/#75 | N/A | 需 `-tags remote` 构建 + SSH，远程形态不在 v1 |
+| JDI 宿主 JDK  provisioning | `POST /debug/jdk/download` | PLANNED | 面板显示闸门缺失；自动下载 JDK17 未实现 |
+| Java 方法/JUnit 探测 | `POST /java/detect` | PLANNED | main/@Test 探测与 JUnit 结果树尚未接入 |
+| JDT 项目模型 | `POST /jdtls/project` | DONE | `activate_project` 调用（autoDetectClasspath + intoProjectRoot），供 JDT LS 使用 |
+| JDT 启动描述符 | `GET /java/launch-descriptor` | DONE | 写入 `.zed/kairo-integration.json`，扩展自动读取 |
+| Ant classpath 分析 | `GET /ant/classpath/analyze` | PLANNED | JDT 模型当前用 autoDetectClasspath 替代 |
+| Java 运行 | `POST /java/run` | PLANNED | 可用 `/servers` + DAP 替代，一键 Run main/test 未实现 |
+| 取消构建 | `DELETE /builds/{id}` | PLANNED | 客户端方法已存在，缺动作/按钮 |
+| Context reload | `POST /servers/{id}/reload` | DONE | 已测通，含 legacy web.xml 镜像与 touch |
+| JVM 热替换 | `POST /jvm/redefine` | PLANNED | 需要 JDWP 目标绑定；当前如实报告 `restart_required` |
+| 编码保存前校验 | `POST /encoding/validate` | DONE | `save_buffer_with_encoding` 在写入前严格校验 |
+| 事件流/缺口检测 | `WS /events` | PLANNED | 目前用有界日志轮询；`event.gap`/`snapshot.required` 未消费 |
+
+### 前端能力类（22 包审计补录）
+
+| 能力 | 来源包 | 状态 | 处置 / 理由 |
+|------|--------|------|-------------|
+| 本地历史 / 书签 / TODO / 通知中心 | theia-product | PLANNED (P3) | Zed 原生部分覆盖；其余为低优先级 UI |
+| 欢迎页 / agent 离线横幅 | theia-product | PLANNED (P3) | 状态栏已有 agent 连接信息 |
+| 快捷键速查表 / focus 命令 / 大文件命令 | theia-product | PLANNED (P3) | Zed 自有键位与命令面板 |
+|  Problems 视图 | theia-product | PARTIAL | 构建诊断已进入面板错误行，未写入 Zed diagnostics store |
+| 状态栏分组 / 工具栏 / Kairo 菜单 | theia-product | PARTIAL | `KairoPanel` 信息等价，未增加顶层菜单；见 `UX-DESIGN.md` |
+| 结构化 Server / Deployments 视图 | tomcat-extension | PARTIAL | 面板四列中包含 Servers/Projects，非独立可交互视图 |
+| JUnit 结果树 | test-extension | PLANNED | 依赖 `/java/detect` |
+| HotSwap 历史 / 回滚 | java-extension | PLANNED | 依赖 `/jvm/redefine` |
+| 实验性 JSP 断点 | jsp-extension | PLANNED (P3) | Kairo 中亦为实验特性 |
+| 切换 JDK | theia-product | PLANNED | 三个槽位可见，切换动作未实现 |
+| GBK 搜索输入 UI | search-extension | PLANNED | 服务层可用，缺查询面板 |
+| 普通 Ctrl+S 的 GBK 拦截 | encoding-extension | PLANNED | Zed 无 will-save 钩子；已有显式 `SaveWithEncoding` |
+
 ## 10. Cross-cutting invariants (must survive in every layer)
 
 | Invariant | Zed enforcement point |

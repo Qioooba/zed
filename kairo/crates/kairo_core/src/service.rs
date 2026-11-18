@@ -490,10 +490,21 @@ impl KairoService {
             object.insert("targetLevel".into(), serde_json::json!(self.settings.target_level));
             object.insert("encoding".into(), serde_json::json!(self.settings.encoding));
         }
+        let jdt_payload = serde_json::json!({
+            "workspaceId": workspace_id,
+            "projectId": project_id,
+            "rootPath": project.root,
+            "buildFile": project.build_file,
+            "autoDetectClasspath": true,
+            "intoProjectRoot": true,
+        });
         cx.spawn(async move |this, cx| {
             let update = client.update_project(&project_id, &config).await;
             let prepare = match update {
-                Ok(_) => client.prepare_jdtls(&workspace_id).await.map(|_| ()),
+                Ok(_) => match client.generate_jdt_project(&jdt_payload).await {
+                    Ok(_) => client.prepare_jdtls(&workspace_id).await.map(|_| ()),
+                    Err(error) => Err(error),
+                },
                 Err(error) => Err(error),
             };
             if let Err(error) = prepare {
@@ -1119,6 +1130,22 @@ impl KairoService {
                     .unwrap_or_else(|| "buffer".to_owned())
             ));
 
+            // Strict representability check before any write — an
+            // unrepresentable character must fail loudly, never become '?'.
+            let validation = client
+                .validate_encoding(&text, &to)
+                .await
+                .context("failed to validate encoding before save")?;
+            if validation.get("valid").and_then(|value| value.as_bool()) == Some(false) {
+                let detail = validation
+                    .get("error")
+                    .and_then(|value| value.as_str())
+                    .unwrap_or("characters are not representable in the target encoding");
+                let error = anyhow!("encoding validation failed: {detail}");
+                this.update(cx, |service, cx| service.set_error(&error, cx))
+                    .log_err();
+                return Err(error);
+            }
             smol::fs::write(&temp, text.as_bytes())
                 .await
                 .with_context(|| format!("staging {}", temp.display()))?;
