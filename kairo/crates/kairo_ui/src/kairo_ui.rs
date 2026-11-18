@@ -199,10 +199,11 @@ pub fn init(cx: &mut App) {
                             .and_then(|file| file.file_system_abs_path(cx))
                     });
                     let Some(path) = path else { return };
+                    let text = editor.read(cx).text(cx);
                     let service = KairoService::global(cx);
                     service.update(cx, |service, cx| {
                         service
-                            .save_active_file_with_encoding(path.to_string_lossy().into_owned(), cx)
+                            .save_buffer_with_encoding(path.to_string_lossy().into_owned(), text, cx)
                             .detach_and_log_err(cx);
                     });
                 },

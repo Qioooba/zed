@@ -184,8 +184,17 @@ impl Render for KairoPanel {
             .collect::<Vec<_>>()
             .join("\n");
 
+        let jdk6_status = if state
+            .toolchains()
+            .iter()
+            .any(|toolchain| toolchain.version.starts_with("1.6"))
+        {
+            "AVAILABLE (real JDK 6 imported)"
+        } else {
+            "MISSING — 1.6 builds will fail closed"
+        };
         let toolchain_slots = format!(
-            "LS JRE: {}\nCompiler JDK: {}\nTomcat JDK: {}\nSource/Target: {}/{}\nEncoding: {}",
+            "LS JRE: {}\nCompiler JDK: {}\nTomcat JDK: {}\nSource/Target: {}/{}\nEncoding: {}\nJDK 6 gate: {}",
             if settings.language_server_java_home.is_empty() {
                 "<not set>"
             } else {
@@ -204,6 +213,7 @@ impl Render for KairoPanel {
             settings.source_level,
             settings.target_level,
             settings.encoding,
+            jdk6_status,
         );
 
         let detected = state
@@ -346,11 +356,22 @@ impl Render for KairoPanel {
                                     .ok()
                                     .flatten();
                                 let Some(path) = path else { return };
+                                let text = panel
+                                    .workspace
+                                    .read_with(cx, |workspace, app| {
+                                        workspace
+                                            .active_item_as::<Editor>(app)
+                                            .map(|editor| editor.read(app).text(app))
+                                    })
+                                    .ok()
+                                    .flatten()
+                                    .unwrap_or_default();
                                 let service = KairoService::global(cx);
                                 service.update(cx, |service, cx| {
                                     service
-                                        .save_active_file_with_encoding(
+                                        .save_buffer_with_encoding(
                                             path.to_string_lossy().into_owned(),
+                                            text,
                                             cx,
                                         )
                                         .detach_and_log_err(cx);

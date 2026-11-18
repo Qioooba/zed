@@ -13,6 +13,7 @@ use std::{
 use anyhow::{Context as _, Result, anyhow};
 use gpui::{App, Context, Entity, Global, Task, TaskExt as _};
 use http_client::HttpClient;
+use util::ResultExt as _;
 
 use crate::{
     agent::{AgentHandle, AgentLaunchConfig, BridgeHandle, spawn_agent, spawn_debug_bridge},
@@ -1054,6 +1055,70 @@ impl KairoService {
                     Err(error)
                 }
             }
+        })
+    }
+
+    /// Save the user's EDITED buffer text with byte-faithful encoding.
+    ///
+    /// Zed buffers are UTF-8. We stage the text in a temp file inside the same
+    /// (sandboxed) directory, let the agent strictly decode/recode it to the
+    /// project encoding, then atomically replace the target file. This avoids
+    /// both UTF-8 corruption and the older bug of recoding stale on-disk bytes.
+    pub fn save_buffer_with_encoding(
+        &mut self,
+        file: String,
+        text: String,
+        cx: &mut Context<Self>,
+    ) -> Task<Result<()>> {
+        let Ok(client) = self.client() else {
+            return self.unavailable("Kairo runtime agent is not running", cx);
+        };
+        let to = self.settings.encoding.clone();
+        cx.spawn(async move |this, cx| {
+            let target = PathBuf::from(&file);
+            let parent = target
+                .parent()
+                .context("the file has no parent directory")?;
+            let temp = parent.join(format!(
+                ".{}.kairo-zed-tmp",
+                target
+                    .file_name()
+                    .map(|name| name.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| "buffer".to_owned())
+            ));
+
+            smol::fs::write(&temp, text.as_bytes())
+                .await
+                .with_context(|| format!("staging {}", temp.display()))?;
+            let request = RecodeRequest {
+                file: temp.to_string_lossy().into_owned(),
+                from: "utf-8".to_owned(),
+                to: to.clone(),
+                eol: None,
+            };
+            let recode = client.recode(&request).await;
+            if let Err(error) = recode {
+                if let Err(cleanup) = smol::fs::remove_file(&temp).await {
+                    log::warn!("failed to remove Kairo save temp file: {cleanup}");
+                }
+                this.update(cx, |service, cx| service.set_error(&error, cx))
+                    .log_err();
+                return Err(error);
+            }
+            let bytes = smol::fs::read(&temp).await?;
+            smol::fs::write(&target, &bytes)
+                .await
+                .with_context(|| format!("saving {}", target.display()))?;
+            if let Err(cleanup) = smol::fs::remove_file(&temp).await {
+                log::warn!("failed to remove Kairo save temp file: {cleanup}");
+            }
+
+            this.update(cx, |service, cx| {
+                service.status_message = format!("Saved {} as {} ({} bytes, strict recode)", file, to, bytes.len());
+                service.last_error = None;
+                cx.notify();
+            })?;
+            Ok(())
         })
     }
 
