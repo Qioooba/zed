@@ -61,6 +61,15 @@ This proves genuine JDK 1.6 compatibility with real tooling, not emulation.
 The JDK-21-only failure above (`toolchain_incompatible`) is the correct
 fail-closed counterpart.
 
+## Chinese-path / spaces real project
+
+Opened a real fixture whose directory name is Chinese and contains a space
+(`D:\kairo\output\waspack-e2e-20261113\fixtures\应用管理 订单`) through
+`POST /api/v1/workspaces` with a UTF-8 body: workspace was created with the
+correct name, and `POST /workspaces/{id}/scan` detected 1 legacy layout.
+This confirms the canonical path handling and UTF-8 wire encoding used by
+`kairo_core::client` work for the user's real directory names.
+
 ## Caveats observed
 
 - `GET /WebRoot/hello.jsp` returned 500 on JDK 21 (JSTL/GBK legacy combination);
