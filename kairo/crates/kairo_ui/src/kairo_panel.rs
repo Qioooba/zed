@@ -96,6 +96,10 @@ impl Panel for KairoPanel {
     fn activation_priority(&self) -> u32 {
         100
     }
+
+    fn enabled(&self, cx: &App) -> bool {
+        self.workspace.read(cx).is_ok()
+    }
 }
 
 impl Render for KairoPanel {
@@ -144,8 +148,6 @@ impl Render for KairoPanel {
             .map(|line| line.line.as_str())
             .collect::<Vec<_>>()
             .join("\n");
-
-        let _ = &self.workspace;
 
         div()
             .flex()

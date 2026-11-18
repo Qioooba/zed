@@ -76,7 +76,7 @@ pub fn init(cx: &mut App) {
                  cx: &mut Context<Workspace>| {
                     let service = KairoService::global(cx);
                     service.update(cx, |service, cx| {
-                        service.start_agent(cx).detach_and_log_err(cx);
+                        service.start_server(false, cx).detach_and_log_err(cx);
                     });
                 },
             );
