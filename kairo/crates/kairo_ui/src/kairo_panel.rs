@@ -118,7 +118,7 @@ impl Render for KairoPanel {
             .map(|toolchain| {
                 format!(
                     "{} {} ({})",
-                    toolchain.label,
+                    toolchain.vendor,
                     toolchain.version,
                     if toolchain.fingerprint.is_empty() {
                         "unverified"
@@ -135,7 +135,7 @@ impl Render for KairoPanel {
             .map(|server| {
                 format!(
                     "{}: {} (gen {}, port {})",
-                    server.id, server.state, server.generation, server.http_port
+                    server.id, server.state, server.generation, server.ports.http
                 )
             })
             .collect::<Vec<_>>()

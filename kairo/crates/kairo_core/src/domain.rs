@@ -110,21 +110,32 @@ pub struct WorkspaceRecord {
 #[serde(rename_all = "camelCase")]
 pub struct DetectedProjectLayout {
     #[serde(default)]
-    pub name: String,
-    #[serde(default)]
     pub root_path: String,
     #[serde(default)]
-    pub source_dirs: Vec<String>,
+    pub build_system: String,
+    #[serde(default)]
+    pub confidence: f64,
+    #[serde(default)]
+    pub layout: LegacyLayout,
+    #[serde(default)]
+    pub encoding_by_extension: BTreeMap<String, String>,
+    #[serde(default)]
+    pub warnings: Vec<String>,
+}
+
+#[derive(Clone, Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LegacyLayout {
+    #[serde(default)]
+    pub src: Vec<String>,
+    #[serde(default)]
+    pub resources: Vec<String>,
+    #[serde(default)]
+    pub lib: String,
     #[serde(default)]
     pub web_root: String,
     #[serde(default)]
-    pub lib_dirs: Vec<String>,
-    #[serde(default)]
-    pub build_file: String,
-    #[serde(default)]
-    pub encoding: String,
-    #[serde(default)]
-    pub confidence: f64,
+    pub build_xml: String,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -172,17 +183,19 @@ pub struct Toolchain {
     #[serde(default)]
     pub id: String,
     #[serde(default)]
-    pub label: String,
+    pub kind: String,
     #[serde(default)]
-    pub java_home: String,
+    pub home: String,
+    #[serde(default)]
+    pub vendor: String,
     #[serde(default)]
     pub version: String,
     #[serde(default)]
-    pub major: u32,
+    pub source_levels: Vec<String>,
     #[serde(default)]
     pub fingerprint: String,
     #[serde(default)]
-    pub source_levels: Vec<String>,
+    pub imported_at: String,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -218,14 +231,17 @@ pub struct BuildResult {
     pub id: String,
     #[serde(default)]
     pub project_id: String,
-    #[serde(default)]
-    pub status: String,
+    /// The agent calls this `state` (`queued`/`running`/`success`/`failure`/`cancelled`).
+    #[serde(default, alias = "status")]
+    pub state: String,
     #[serde(default)]
     pub output: String,
     #[serde(default)]
     pub diagnostics: Vec<Diagnostic>,
     #[serde(default)]
-    pub error_code: String,
+    pub files_compiled: u32,
+    #[serde(default)]
+    pub exit_code: i32,
     #[serde(default)]
     pub started_at: String,
     #[serde(default)]
@@ -246,12 +262,14 @@ pub struct DeployRequest {
 #[serde(rename_all = "camelCase")]
 pub struct DeployResult {
     pub id: String,
+    #[serde(default, alias = "status")]
+    pub state: String,
     #[serde(default)]
-    pub status: String,
+    pub files_touched: u64,
     #[serde(default)]
-    pub files_written: u64,
+    pub bytes: u64,
     #[serde(default)]
-    pub error_code: String,
+    pub hot_reload_mode: String,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -275,13 +293,24 @@ pub struct ServerResponse {
     #[serde(default)]
     pub generation: u64,
     #[serde(default)]
-    pub http_port: u16,
-    #[serde(default)]
-    pub debug_port: u16,
+    pub ports: ServerPorts,
     #[serde(default)]
     pub context_path: String,
     #[serde(default)]
-    pub error_code: String,
+    pub url: String,
+    #[serde(default)]
+    pub runtime_instance_id: String,
+}
+
+#[derive(Clone, Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ServerPorts {
+    #[serde(default)]
+    pub http: u16,
+    #[serde(default)]
+    pub debug: u16,
+    #[serde(default)]
+    pub shutdown: u16,
 }
 
 #[derive(Clone, Debug, Deserialize)]

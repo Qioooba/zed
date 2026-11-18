@@ -249,7 +249,7 @@ impl KairoService {
             let build = client.start_build(&request).await?;
             this.update(cx, |service, cx| {
                 service.builds.insert(0, build.clone());
-                service.status_message = format!("Build {} is {}", build.id, build.status);
+                service.status_message = format!("Build {} is {}", build.id, build.state);
                 cx.notify();
             })?;
             Ok(())
@@ -266,7 +266,7 @@ impl KairoService {
         let build_id = self
             .builds
             .first()
-            .filter(|build| build.status == "succeeded")
+            .filter(|build| build.state == "success")
             .map(|build| build.id.clone())
             .unwrap_or_default();
         cx.spawn(async move |this, cx| {
@@ -277,7 +277,7 @@ impl KairoService {
             };
             let result: DeployResult = client.deploy(&request).await?;
             this.update(cx, |service, cx| {
-                service.status_message = format!("Deployment {} is {}", result.id, result.status);
+                service.status_message = format!("Deployment {} is {}", result.id, result.state);
                 cx.notify();
             })?;
             Ok(())
