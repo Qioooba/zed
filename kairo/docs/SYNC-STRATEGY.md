@@ -1,0 +1,52 @@
+# Upstream Sync Strategy
+
+Goal: be able to `git rebase` onto new Zed upstream releases with minimal,
+mechanical conflict resolution, so future work can be contributed back / kept in
+step with the Zed authors.
+
+## Branch model
+
+- `main` — pristine upstream Zed (never committed to by Kairo work).
+- `kairo/integration` — the only working branch. All Kairo integration commits
+  live here (created from `main` on 2026-11-19).
+- When syncing: `git fetch upstream && git rebase upstream/main` from
+  `kairo/integration`.
+
+## Ownership map
+
+| Path | Owner | Conflict risk | Policy |
+|------|-------|---------------|--------|
+| `kairo/**` | Kairo | none (upstream never touches it) | Free to create/modify. |
+| `Cargo.toml` (root) | upstream | high | Keep exactly 2 `members` + 2 dependency alias lines, each tagged `# kairo: integration`, placed in the sorted section. |
+| `Cargo.lock` | upstream (generated) | medium | Commit Cargo's mechanical diff; resolve by regeneration on rebase. |
+| `crates/settings_content/src/settings_content.rs` | upstream | medium | 2 tagged insertions: the `kairo` field on `SettingsContent` and the `KairoSettingsContent` struct. No `default.json` edit. |
+| `crates/zed/Cargo.toml` | upstream | medium | 2 dependency lines, tagged. |
+| `crates/zed/src/main.rs` | upstream | high | 2 init lines next to `terminal_view::init(cx)`, tagged `// kairo: integration`. |
+| `crates/zed/src/zed.rs` | upstream | high | 1 panel-load line in `initialize_panels`, tagged. |
+| `assets/settings/default.json` | upstream | very high | **Do not edit.** Register settings from `kairo_core` via `Settings::register`. |
+| `assets/keymaps/default-*.json` | upstream | very high | **Do not edit.** Bind keys at runtime via `cx.bind_keys`. |
+| `crates/project/**`, `crates/languages/**`, `extensions/**` | upstream | very high | **Do not edit.** Put JSP/DAP/LSP contributions in Kairo-owned files and register through public APIs. |
+| `README.md` | upstream + harness rule | n/a | Keep the two `> [!IMPORTANT]` review lines at the top (AGENTS.md forbids removing them). |
+
+## Tagging convention
+
+Every upstream-file insertion carries a grep marker so a rebase can find and
+reapply them:
+
+- Rust: `// kairo: integration`
+- Cargo/TOML: `# kairo: integration`
+
+Verify after any rebase:
+
+```
+rg "kairo: integration" Cargo.toml crates/zed/Cargo.toml crates/zed/src/main.rs crates/zed/src/zed.rs
+cargo check -p kairo_core -p kairo_ui -p zed
+./script/clippy
+```
+
+## Commit discipline
+
+- One logical change per commit, with a short imperative subject.
+- Never amend/squash upstream commits; only Kairo-owned commits on this branch.
+- Keep generated files (`Cargo.lock`) in a separate commit from hand-written code.
+- Document any unavoidable upstream edit in `PROGRESS.md` at the time it is made.
