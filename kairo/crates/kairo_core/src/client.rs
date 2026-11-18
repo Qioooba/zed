@@ -260,6 +260,20 @@ impl KairoClient {
         self.post("/api/v1/jvm/compile", &payload).await
     }
 
+    /// The endpoint that accepts native absolute paths and syncs the compiled
+    /// classes to the running server (preferred for hot deploy on Windows).
+    pub async fn jvm_compile_incremental(
+        &self,
+        files: Vec<String>,
+        project_id: &str,
+    ) -> Result<serde_json::Value> {
+        self.post(
+            "/api/v1/jvm/compile-incremental",
+            &serde_json::json!({ "files": files, "projectId": project_id }),
+        )
+        .await
+    }
+
     pub async fn jvm_redefine(&self, payload: serde_json::Value) -> Result<serde_json::Value> {
         self.post("/api/v1/jvm/redefine", &payload).await
     }

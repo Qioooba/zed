@@ -782,29 +782,16 @@ impl KairoService {
     /// compile, everything else through static sync. `restart_required` is
     /// never reported as `synced`.
     pub fn hot_deploy(&mut self, java_file: Option<String>, cx: &mut Context<Self>) -> Task<Result<()>> {
-        let Ok(client) = self.client() else {
+        if !self.is_running() {
             return self.unavailable("Kairo runtime agent is not running", cx);
-        };
+        }
         if let Some(file) = java_file {
-            let project_id = self.active_project_id.clone().unwrap_or_default();
-            cx.spawn(async move |this, cx| {
-                let payload = serde_json::json!({ "file": file, "projectId": project_id });
-                match client.jvm_compile(payload).await {
-                    Ok(_) => {
-                        this.update(cx, |service, cx| {
-                            service.hot_reload_mode = "compileOnly → restart_required".to_owned();
-                            service.status_message =
-                                "Incremental compile done; Tomcat reloadable=false → restart_required".to_owned();
-                            cx.notify();
-                        })?;
-                        Ok(())
-                    }
-                    Err(error) => {
-                        this.update(cx, |service, cx| service.set_error(&error, cx))?;
-                        Err(error)
-                    }
-                }
-            })
+            // The agent's /jvm/compile* endpoints reject native Windows paths
+            // (verified on this machine). A real full build is the reliable
+            // path; Tomcat's reloadable=false still means restart_required.
+            self.hot_reload_mode = format!("compileOnly → {file}; restart_required");
+            cx.notify();
+            self.start_build(false, cx)
         } else {
             self.deploy(cx)
         }
@@ -996,15 +983,22 @@ impl KairoService {
             .ok()
             .flatten();
         cx.spawn(async move |this, cx| {
-            if let Some((source, target)) = web_xml
-                && !target.exists()
-                && let Ok(contents) = smol::fs::read(&source).await
-            {
-                if let Some(parent) = target.parent()
-                    && smol::fs::create_dir_all(parent).await.is_ok()
+            if let Some((source, target)) = web_xml {
+                if !target.exists()
+                    && let Ok(contents) = smol::fs::read(&source).await
                 {
+                    if let Some(parent) = target.parent()
+                        && smol::fs::create_dir_all(parent).await.is_ok()
+                    {
+                        if let Err(error) = smol::fs::write(&target, contents).await {
+                            log::warn!("failed to mirror legacy WEB-INF/web.xml: {error}");
+                        }
+                    }
+                } else if let Ok(contents) = smol::fs::read(&target).await {
+                    // The agent's verified reload touches web.xml to detect a
+                    // real change; refresh its mtime before asking for reload.
                     if let Err(error) = smol::fs::write(&target, contents).await {
-                        log::warn!("failed to mirror legacy WEB-INF/web.xml: {error}");
+                        log::warn!("failed to touch WEB-INF/web.xml: {error}");
                     }
                 }
             }
