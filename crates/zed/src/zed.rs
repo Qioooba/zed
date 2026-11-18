@@ -47,6 +47,7 @@ use gpui::{
     actions, image_cache, img, point, px, retain_all,
 };
 use image_viewer::ImageInfo;
+use kairo_ui::KairoPanel; // kairo: integration
 use language::Capability;
 use language_onboarding::BasedPyrightBanner;
 use language_tools::lsp_button::{self, LspButton};
@@ -88,7 +89,6 @@ use std::{
     sync::atomic::{self, AtomicBool},
 };
 use terminal_view::terminal_panel::{self, TerminalPanel};
-use kairo_ui::KairoPanel; // kairo: integration
 use theme::{ActiveTheme, SystemAppearance, ThemeRegistry};
 use theme_settings::{ThemeSettings, load_user_theme};
 use ui::{Navigable, NavigableEntry, PopoverMenuHandle, TintColor, prelude::*};

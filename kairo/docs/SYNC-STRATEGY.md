@@ -17,12 +17,12 @@ step with the Zed authors.
 | Path | Owner | Conflict risk | Policy |
 |------|-------|---------------|--------|
 | `kairo/**` | Kairo | none (upstream never touches it) | Free to create/modify. |
-| `Cargo.toml` (root) | upstream | high | Keep exactly 2 `members` + 2 dependency alias lines, each tagged `# kairo: integration`, placed in the sorted section. |
-| `Cargo.lock` | upstream (generated) | medium | Commit Cargo's mechanical diff; resolve by regeneration on rebase. |
+| `Cargo.toml` (root) | upstream | high | **3** `members` lines (`kairo_core`, `kairo_ui`, `kairo-java` under one `# kairo: integration` block comment) + **2** dependency aliases, each inline-tagged. Aliases are deliberately placed after `audio` (not alphabetically sorted) to keep the diff local. |
+| `Cargo.lock` | upstream (generated) | medium | **Pending:** the three new workspace members are not in `Cargo.lock` yet because this machine has no Rust toolchain. The first `cargo` run on a Rust machine must commit the regenerated lockfile in a separate commit before any rebase. |
 | `crates/settings_content/src/settings_content.rs` | upstream | medium | 2 tagged insertions: the `kairo` field on `SettingsContent` and the `KairoSettingsContent` struct. No `default.json` edit. |
 | `crates/zed/Cargo.toml` | upstream | medium | 2 dependency lines, tagged. |
 | `crates/zed/src/main.rs` | upstream | high | 2 init lines next to `terminal_view::init(cx)`, tagged `// kairo: integration`. |
-| `crates/zed/src/zed.rs` | upstream | high | 1 panel-load line in `initialize_panels`, tagged. |
+| `crates/zed/src/zed.rs` | upstream | high | 3 tagged lines: import in rustfmt order, panel `load` call, and the `add_panel_when_ready` arm. |
 | `assets/settings/default.json` | upstream | very high | **Do not edit.** Register settings from `kairo_core` via `Settings::register`. |
 | `assets/keymaps/default-*.json` | upstream | very high | **Do not edit.** Bind keys at runtime via `cx.bind_keys`. |
 | `crates/project/**`, `crates/languages/**`, `extensions/**` | upstream | very high | **Do not edit.** Put JSP/DAP/LSP contributions in Kairo-owned files and register through public APIs. |
@@ -39,7 +39,7 @@ reapply them:
 Verify after any rebase:
 
 ```
-rg "kairo: integration" Cargo.toml crates/zed/Cargo.toml crates/zed/src/main.rs crates/zed/src/zed.rs
+rg "kairo: integration" Cargo.toml crates/settings_content/src/settings_content.rs crates/zed/Cargo.toml crates/zed/src/main.rs crates/zed/src/zed.rs
 cargo check -p kairo_core -p kairo_ui -p zed
 ./script/clippy
 ```

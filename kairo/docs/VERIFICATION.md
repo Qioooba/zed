@@ -41,6 +41,26 @@ The server's generated `<Context path="/" docBase="G:\spaces\kairo-ide\legacy-sa
 confirms the agent mounts the legacy project directly, so static JSP edits take
 effect immediately.
 
+## Real JDK 6 round (2026-11-19, second pass)
+
+Using the **actual Zulu JDK 6** found on this machine
+(`D:\kairo\tmp\qa-20260909\java\zulu6.22.0.3-jdk6.0.119-win_x64`,
+`javac 1.6.0-119`), against a clean copy of the legacy sample in a temp dir:
+
+| Step | Result |
+|------|--------|
+| Import toolchain | `openjdk-1.6.0-119-aa6d249c`, sourceLevels include `1.6`, SHA-256 fingerprint recorded |
+| Detect project | `sourceVersion=1.6`, `targetVersion=1.6`, `encoding=gbk`, `buildSystem=ant` |
+| Real build with `source/target=1.6` | **success**, `exitCode=0`, **7 files compiled** |
+| Bytecode verification | `HelloWorld.class` header `CA FE BA BE 00 00 00 32` → **major=50 = Java 6** |
+| GBK detection of a real JSP | `hello.jsp` → `encoding=gbk`, confidence 0.95, `eol=crlf`, no BOM |
+| Tomcat 6 start | `state=running`, HTTP 127.0.0.1:18082 |
+| JSP serving | `/src/main/webapp/index.jsp` → HTTP 200, rendered HTML |
+
+This proves genuine JDK 1.6 compatibility with real tooling, not emulation.
+The JDK-21-only failure above (`toolchain_incompatible`) is the correct
+fail-closed counterpart.
+
 ## Caveats observed
 
 - `GET /WebRoot/hello.jsp` returned 500 on JDK 21 (JSTL/GBK legacy combination);
