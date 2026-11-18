@@ -11,7 +11,7 @@ use std::{
 };
 
 use anyhow::{Context as _, Result, anyhow};
-use gpui::{App, Context, Entity, Global, Task};
+use gpui::{App, Context, Entity, Global, Task, TaskExt as _};
 use http_client::HttpClient;
 
 use crate::{
@@ -226,7 +226,8 @@ impl KairoService {
                 .await
                 .context("failed to start the Kairo runtime agent")?;
             let base_url = agent.base_url();
-            let client = KairoClient::new(http, base_url.clone(), None);
+            let secret = std::env::var("KAIRO_LOCAL_SECRET").ok().filter(|value| !value.is_empty());
+            let client = KairoClient::new(http, base_url.clone(), secret);
             client
                 .health()
                 .await
@@ -259,8 +260,11 @@ impl KairoService {
                 let toolchains = client.list_toolchains().await?;
                 let mut servers = Vec::new();
                 for workspace in &workspaces {
-                    if let Ok(list) = client.get_servers_for_workspace(&workspace.id).await {
-                        servers.extend(list);
+                    match client.get_servers_for_workspace(&workspace.id).await {
+                        Ok(list) => servers.extend(list),
+                        Err(error) => {
+                            log::warn!("failed to list Kairo servers for {}: {error:#}", workspace.id)
+                        }
                     }
                 }
                 Ok::<_, anyhow::Error>((workspaces, projects, toolchains, servers))
@@ -342,7 +346,9 @@ impl KairoService {
                         service.workspaces.push(workspace);
                         cx.notify();
                     })?;
-                    this.update(cx, |service, cx| service.scan_workspace(id, cx))?;
+                    this.update(cx, |service, cx| {
+                        service.scan_workspace(id, root_path.clone(), cx)
+                    })?;
                     Ok(())
                 }
                 Err(error) => {
@@ -353,12 +359,17 @@ impl KairoService {
         })
     }
 
-    pub fn scan_workspace(&mut self, workspace_id: String, cx: &mut Context<Self>) -> Task<Result<()>> {
+    pub fn scan_workspace(
+        &mut self,
+        workspace_id: String,
+        root_path: String,
+        cx: &mut Context<Self>,
+    ) -> Task<Result<()>> {
         let Ok(client) = self.client() else {
             return Task::ready(Err(anyhow!("Kairo runtime agent is not running")));
         };
         cx.spawn(async move |this, cx| {
-            match client.scan_project(&workspace_id).await {
+            match client.scan_project(&workspace_id, &root_path).await {
                 Ok(detection) => {
                     this.update(cx, |service, cx| {
                         service.detected = detection.detected;
@@ -501,12 +512,16 @@ impl KairoService {
         let Some(project_id) = self.active_project_id.clone() else {
             return Task::ready(Err(anyhow!("no active Kairo project")));
         };
-        let build_id = self
+        let Some(build_id) = self
             .builds
             .iter()
             .find(|build| build.state == "success")
             .map(|build| build.id.clone())
-            .unwrap_or_default();
+        else {
+            return Task::ready(Err(anyhow!(
+                "no successful Kairo build to deploy — run Compile first"
+            )));
+        };
         cx.spawn(async move |this, cx| {
             let request = DeployRequest {
                 project_id,

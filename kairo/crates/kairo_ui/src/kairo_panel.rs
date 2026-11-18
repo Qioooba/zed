@@ -3,8 +3,8 @@
 //! unbounded log views on the target 4 GB machines.
 
 use gpui::{
-    App, AsyncWindowContext, Context, EventEmitter, FluentBuilder, FocusHandle, Focusable,
-    IntoElement, ParentElement, Render, SharedString, Styled, Task, Window, div, px,
+    App, AsyncWindowContext, Context, EventEmitter, FocusHandle, Focusable, SharedString, Subscription,
+    Task, Window, div, prelude::*, px,
 };
 use icons::IconName;
 use kairo_core::{actions, service::KairoService};
@@ -18,6 +18,7 @@ const MAX_VISIBLE_LOG_LINES: usize = 200;
 pub struct KairoPanel {
     workspace: gpui::WeakEntity<Workspace>,
     focus_handle: FocusHandle,
+    _subscriptions: Vec<Subscription>,
 }
 
 impl KairoPanel {
@@ -26,9 +27,12 @@ impl KairoPanel {
         _window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
+        let service = KairoService::global(cx);
+        let subscriptions = vec![cx.observe(&service, |_, _, cx| cx.notify())];
         Self {
             workspace,
             focus_handle: cx.focus_handle(),
+            _subscriptions: subscriptions,
         }
     }
 
@@ -50,6 +54,7 @@ impl KairoPanel {
         handler: impl Fn(&mut KairoService, &mut Context<KairoService>) + 'static,
     ) -> impl IntoElement {
         div()
+            .id(label)
             .px_2()
             .py_1()
             .rounded_md()

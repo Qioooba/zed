@@ -88,10 +88,10 @@ impl KairoClient {
         .await
     }
 
-    pub async fn scan_project(&self, workspace_id: &str) -> Result<ProjectDetection> {
+    pub async fn scan_project(&self, workspace_id: &str, root_path: &str) -> Result<ProjectDetection> {
         self.post(
             &format!("/api/v1/workspaces/{workspace_id}/scan"),
-            &serde_json::json!({}),
+            &serde_json::json!({ "rootPath": root_path }),
         )
         .await
     }
@@ -304,11 +304,15 @@ impl KairoClient {
             project_id: self.project_id.clone(),
             payload: payload_value,
         };
-        let request = HttpRequest::builder()
+        let mut request_builder = HttpRequest::builder()
             .method(Method::PUT)
             .uri(&uri)
             .header("Content-Type", "application/json")
-            .header("Accept", "application/json")
+            .header("Accept", "application/json");
+        if let Some(secret) = &self.secret {
+            request_builder = request_builder.header("X-Kairo-Secret", secret.as_str());
+        }
+        let request = request_builder
             .body(AsyncBody::from(serde_json::to_string(&envelope)?))
             .context("invalid Kairo PUT request")?;
         self.send_and_decode(request).await
@@ -326,6 +330,9 @@ impl KairoClient {
     {
         let uri = format!("{}{}", self.base_url, path);
         let mut builder = HttpRequest::builder().method(method).uri(&uri);
+        if let Some(secret) = &self.secret {
+            builder = builder.header("X-Kairo-Secret", secret.as_str());
+        }
 
         if let Some(payload) = body {
             let payload_value = serde_json::to_value(payload)?;

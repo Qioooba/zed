@@ -4,7 +4,7 @@
 pub mod kairo_panel;
 
 use editor::Editor;
-use gpui::{App, Context, Window};
+use gpui::{App, Context, Window, prelude::*};
 use kairo_core::{actions, service::KairoService};
 use workspace::Workspace;
 
@@ -14,7 +14,7 @@ pub use kairo_panel::KairoPanel;
 /// `KairoService`; none of them is a placeholder.
 pub fn init(cx: &mut App) {
     cx.observe_new(
-        |workspace: &mut Workspace, window: &mut Window, cx: &mut Context<Workspace>| {
+        |workspace: &mut Workspace, _window: Option<&mut Window>, cx: &mut Context<Workspace>| {
             workspace.register_action(
                 |_workspace: &mut Workspace,
                  _action: &actions::Compile,

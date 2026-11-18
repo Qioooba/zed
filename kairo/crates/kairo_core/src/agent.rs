@@ -135,14 +135,16 @@ pub async fn spawn_agent(
         );
     }
 
-    std::fs::create_dir_all(&config.data_dir)
+    smol::fs::create_dir_all(&config.data_dir)
+        .await
         .with_context(|| format!("creating Kairo data dir {}", config.data_dir.display()))?;
 
     let state_path = config.data_dir.join("agent-state.json");
     // A stale state file from a previous agent would make us connect to a dead
     // port. Remove it before spawning (the agent recreates it atomically).
     if state_path.exists() {
-        std::fs::remove_file(&state_path)
+        smol::fs::remove_file(&state_path)
+            .await
             .with_context(|| format!("removing stale {}", state_path.display()))?;
     }
 
@@ -167,7 +169,7 @@ pub async fn spawn_agent(
     let deadline = std::time::Instant::now() + Duration::from_secs(30);
     let ready_state;
     loop {
-        if let Ok(contents) = std::fs::read_to_string(&state_path)
+        if let Ok(contents) = smol::fs::read_to_string(&state_path).await
             && let Ok(state) = serde_json::from_str::<AgentStateFile>(&contents)
         {
             if state.status == "ready" && state.port != 0 {
