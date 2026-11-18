@@ -400,9 +400,9 @@ impl Render for KairoPanel {
             )
             .child(
                 div()
+                    .id("kairo-log-scroll")
                     .flex_1()
                     .overflow_y_scroll()
-                    .font_monospace()
                     .child(SharedString::from(format!(
                         "Tomcat logs (last {MAX_VISIBLE_LOG_LINES})\n{logs}"
                     ))),

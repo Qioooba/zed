@@ -9,11 +9,10 @@ pub mod service;
 pub mod settings;
 
 use gpui::App;
-use settings::Settings as _;
 
 /// Register Kairo settings, keybindings, and the global service.
 pub fn init(cx: &mut App) {
-    settings::KairoSettings::register(cx);
+    settings::register(cx);
     actions::bind_keys(cx);
     service::init_global(cx);
 }

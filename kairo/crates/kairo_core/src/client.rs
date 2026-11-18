@@ -405,7 +405,7 @@ impl KairoClient {
             // Even error statuses carry the typed envelope. Try to surface the
             // closed error code rather than a generic HTTP error.
             if let Ok(envelope) =
-                serde_json::from_slice::<ResponseEnvelope<serde_json::Value>>(&body_bytes)
+                serde_json::from_slice::<ResponseEnvelope>(&body_bytes)
                 && let Some(error) = envelope.error
             {
                 bail!(error);
@@ -423,7 +423,7 @@ impl KairoClient {
             if let Some(object) = value.as_object()
                 && object.contains_key("ok")
             {
-                let envelope: ResponseEnvelope<T> = serde_json::from_value(value)
+                let envelope: ResponseEnvelope = serde_json::from_value(value)
                     .context("invalid Kairo response envelope")?;
                 if !envelope.ok {
                     if let Some(error) = envelope.error {
@@ -431,7 +431,8 @@ impl KairoClient {
                     }
                     bail!("Kairo agent reported an unspecified error");
                 }
-                return envelope.payload.context("Kairo response missing payload");
+                let payload = envelope.payload.context("Kairo response missing payload")?;
+                return serde_json::from_value(payload).context("invalid Kairo response payload");
             }
             return serde_json::from_value(value).context("invalid Kairo response payload");
         }

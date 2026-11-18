@@ -53,7 +53,8 @@ struct AgentStateFile {
 /// A running agent process. Dropping it terminates the whole process tree via
 /// `util::process::Child`'s job object (Windows) / process group (Unix).
 pub struct AgentHandle {
-    child: util::process::Child,
+    // Held solely to reap the agent's process tree on drop.
+    _child: util::process::Child,
     port: u16,
     instance_id: String,
     pid: u32,
@@ -151,7 +152,7 @@ pub async fn spawn_agent(
     }
 
     Ok(AgentHandle {
-        child,
+        _child: child,
         port: ready_state.port,
         instance_id: ready_state.instance_id,
         pid,

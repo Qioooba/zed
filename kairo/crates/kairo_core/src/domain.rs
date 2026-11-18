@@ -51,18 +51,16 @@ pub struct RequestEnvelope<T: Serialize> {
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ResponseEnvelope<T: DeserializeOwned> {
+pub struct ResponseEnvelope {
     #[serde(default)]
     pub request_id: String,
     #[serde(default)]
     pub ok: bool,
     #[serde(default)]
-    pub payload: Option<T>,
+    pub payload: Option<serde_json::Value>,
     #[serde(default)]
     pub error: Option<ApiError>,
 }
-
-use serde::de::DeserializeOwned;
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -145,7 +143,7 @@ pub struct ProjectDetection {
     pub detected: Vec<DetectedProjectLayout>,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Project {
     pub id: String,

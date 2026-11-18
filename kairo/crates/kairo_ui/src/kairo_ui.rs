@@ -14,7 +14,7 @@ pub use kairo_panel::KairoPanel;
 /// `KairoService`; none of them is a placeholder.
 pub fn init(cx: &mut App) {
     cx.observe_new(
-        |workspace: &mut Workspace, _window: Option<&mut Window>, cx: &mut Context<Workspace>| {
+        |workspace: &mut Workspace, _window: Option<&mut Window>, _cx: &mut Context<Workspace>| {
             workspace.register_action(
                 |_workspace: &mut Workspace,
                  _action: &actions::Compile,

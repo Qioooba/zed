@@ -80,6 +80,10 @@ impl Settings for KairoSettings {
     }
 }
 
+pub fn register(cx: &mut App) {
+    KairoSettings::register(cx);
+}
+
 pub fn get(cx: &App) -> &KairoSettings {
     KairoSettings::get_global(cx)
 }

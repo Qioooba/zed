@@ -6,7 +6,7 @@ use zed::settings::LspSettings;
 use zed_extension_api::{
     self as zed, DebugAdapterBinary, DebugTaskDefinition, LanguageServerId,
     StartDebuggingRequestArguments, StartDebuggingRequestArgumentsRequest, Worktree,
-    serde_json::{Value, json},
+    serde_json::{self, Value, json},
 };
 
 struct KairoJavaExtension;

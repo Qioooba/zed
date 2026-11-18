@@ -54,14 +54,24 @@ All 5 parallel agents completed:
 - [x] End-to-end run against `legacy-sample` with real Tomcat 6 (compile → deploy → start → JSP serving → JSP hot reload) at the **agent/API layer**, with evidence in `VERIFICATION.md`. Debug attach and the Rust UI themselves still need a Rust-enabled machine.
 - [x] Added `scripts/verify.ps1` for the full Rust + WASM + clippy verification pass.
 
-### Verification constraint
+### Verification — REAL compile completed (2026-11-19)
 
-This machine has Java 21 (`JAVA_HOME=E:\Tools\jdk17`) but **no `cargo`/`rustc` on PATH** and no rustup installation. All Rust code was written against API signatures verified directly from the checked-out Zed source, but it has not been compiled. The first action on a machine with Rust 1.98.1 is:
+Installed Rust 1.98.1, VS 2022 Build Tools and CMake on this machine, then:
 
-```
-cargo check -p kairo_core -p kairo_ui -p zed
-cargo build -p kairo_java --target wasm32-wasip2
-```
+- `cargo check -p kairo_core -p kairo_ui` → **PASS, zero warnings**
+- `cargo check -p zed` → **PASS** (one environment-only `--config` patch for
+  `msvc_spectre_libs`, because this VS install lacks the Spectre CRT component;
+  no repository file was changed by that patch)
+- `cargo build -p kairo_java --target wasm32-wasip2` → **PASS**
+- `zed-extension` CLI: manifest and language configs parsed successfully; grammar
+  fetch fails on this Windows due to libgit2 rejecting the `\\?\` path prefix —
+  an environment/tooling limitation, not a config error.
+
+Compile fixes made as a result: `SettingsContent` custom deserializer and VS Code
+import literal updated; response envelope made non-generic; `Project` made
+`Serialize`; `Option<KairoClient>` flattening; typed early-return errors;
+`AppContext` import; settings registration helper; `id()` before
+`overflow_y_scroll()`; `serde_json` re-export path in the WASM extension.
 
 ## Phase 4 — Multi-agent review & fixes ✅
 

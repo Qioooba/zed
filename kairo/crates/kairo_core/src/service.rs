@@ -11,7 +11,7 @@ use std::{
 };
 
 use anyhow::{Context as _, Result, anyhow};
-use gpui::{App, Context, Entity, Global, Task, TaskExt as _};
+use gpui::{App, AppContext as _, Context, Entity, Global, Task, TaskExt as _};
 use http_client::HttpClient;
 use util::ResultExt as _;
 
@@ -19,7 +19,7 @@ use crate::{
     agent::{AgentHandle, AgentLaunchConfig, spawn_agent},
     client::{KairoClient, global_http_client},
     domain::{
-        BuildRequest, BuildResult, DebugAdapterStatus, DeployRequest, DeployResult,
+        BuildRequest, BuildResult, DebugAdapterStatus, DeployRequest,
         DetectedProjectLayout, EncodingDetection, LogLine, Project, RecodeRequest, ServerResponse,
         StartServerRequest, Toolchain, WorkspaceRecord,
     },
@@ -501,7 +501,7 @@ impl KairoService {
         cx.spawn(async move |this, cx| {
             let update = client.update_project(&project_id, &config).await;
             let prepare = match update {
-                Ok(_) => match client.generate_jdt_project(&jdt_payload).await {
+                Ok(_) => match client.generate_jdt_project(jdt_payload).await {
                     Ok(_) => client.prepare_jdtls(&workspace_id).await.map(|_| ()),
                     Err(error) => Err(error),
                 },
@@ -587,7 +587,9 @@ impl KairoService {
                         cx.notify();
                     })?;
                     this.update(cx, |service, cx| {
-                        service.scan_workspace(id, root_path.clone(), cx)
+                        service
+                            .scan_workspace(id, root_path.clone(), cx)
+                            .detach_and_log_err(cx);
                     })?;
                     Ok(())
                 }
@@ -685,6 +687,7 @@ impl KairoService {
                 let Some(client) = this
                     .read_with(cx, |service, _| service.client.clone())
                     .ok()
+                    .flatten()
                 else {
                     return;
                 };
@@ -811,7 +814,9 @@ impl KairoService {
     /// Verify the Java 6 / Tomcat 6 / JDWP gate before offering debug.
     pub fn check_debug_gate(&mut self, cx: &mut Context<Self>) -> Task<Result<DebugAdapterStatus>> {
         let Ok(client) = self.client() else {
-            return self.unavailable("Kairo runtime agent is not running", cx);
+            self.last_error = Some("Kairo runtime agent is not running".to_owned());
+            cx.notify();
+            return Task::ready(Err(anyhow!("Kairo runtime agent is not running")));
         };
         cx.spawn(async move |this, cx| {
             match client.debug_adapter_status().await {
@@ -972,27 +977,22 @@ impl KairoService {
         // The agent's verified context-reload touches <projectRoot>/WEB-INF/web.xml.
         // 2008-era layouts keep it under WebRoot/WEB-INF, so mirror it transparently
         // before asking for a reload.
-        let web_xml = this
-            .read_with(cx, |service, _| {
-                service
-                    .projects
-                    .iter()
-                    .find(|project| Some(project.id.as_str()) == service.active_project_id.as_deref())
-                    .map(|project| {
-                        let root = PathBuf::from(&project.root);
-                        let webapp = PathBuf::from(&project.webapp_dir);
-                        let source = if webapp.is_absolute() {
-                            webapp
-                        } else {
-                            root.join(webapp)
-                        }
-                        .join("WEB-INF")
-                        .join("web.xml");
-                        (source, root.join("WEB-INF").join("web.xml"))
-                    })
-            })
-            .ok()
-            .flatten();
+        let web_xml = self
+            .projects
+            .iter()
+            .find(|project| Some(project.id.as_str()) == self.active_project_id.as_deref())
+            .map(|project| {
+                let root = PathBuf::from(&project.root);
+                let webapp = PathBuf::from(&project.webapp_dir);
+                let source = if webapp.is_absolute() {
+                    webapp
+                } else {
+                    root.join(webapp)
+                }
+                .join("WEB-INF")
+                .join("web.xml");
+                (source, root.join("WEB-INF").join("web.xml"))
+            });
         cx.spawn(async move |this, cx| {
             if let Some((source, target)) = web_xml {
                 if !target.exists()
@@ -1061,6 +1061,7 @@ impl KairoService {
                 let Some(client) = this
                     .read_with(cx, |service, _| service.client.clone())
                     .ok()
+                    .flatten()
                 else {
                     return;
                 };
@@ -1264,7 +1265,9 @@ impl KairoService {
     /// projects must go through the agent.
     pub fn search(&mut self, query: String, cx: &mut Context<Self>) -> Task<Result<serde_json::Value>> {
         let Ok(client) = self.client() else {
-            return self.unavailable("Kairo runtime agent is not running", cx);
+            self.last_error = Some("Kairo runtime agent is not running".to_owned());
+            cx.notify();
+            return Task::ready(Err(anyhow!("Kairo runtime agent is not running")));
         };
         let encoding = self.settings.encoding.clone();
         cx.spawn(async move |this, cx| {

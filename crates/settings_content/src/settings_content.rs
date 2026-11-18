@@ -418,6 +418,7 @@ fallible_options::flattened_deserialize!(SettingsContent {
         node, proxy, reduce_motion, server_url, credentials_url, session, telemetry, terminal,
         title_bar, vim_mode, calls, which_key, vim, modeline_lines, feature_flags,
         instrumentation,
+        kairo, // kairo: integration
     },
     defaults: {},
 });
