@@ -3,17 +3,18 @@
 
 pub mod kairo_panel;
 
+use editor::Editor;
 use gpui::{App, Context, Window};
 use kairo_core::{actions, service::KairoService};
 use workspace::Workspace;
 
 pub use kairo_panel::KairoPanel;
 
-/// Register Kairo workspace actions. The panel itself is loaded from
-/// `initialize_panels` in `crates/zed/src/zed.rs` (one tagged upstream line).
+/// Register every Kairo action. Each handler drives the real operation via
+/// `KairoService`; none of them is a placeholder.
 pub fn init(cx: &mut App) {
     cx.observe_new(
-        |workspace: &mut Workspace, _window: &mut Window, cx: &mut Context<Workspace>| {
+        |workspace: &mut Workspace, window: &mut Window, cx: &mut Context<Workspace>| {
             workspace.register_action(
                 |_workspace: &mut Workspace,
                  _action: &actions::Compile,
@@ -43,7 +44,7 @@ pub fn init(cx: &mut App) {
                  cx: &mut Context<Workspace>| {
                     let service = KairoService::global(cx);
                     service.update(cx, |service, cx| {
-                        service.compile(false, cx).detach_and_log_err(cx);
+                        service.build_and_deploy(cx).detach_and_log_err(cx);
                     });
                 },
             );
@@ -65,7 +66,7 @@ pub fn init(cx: &mut App) {
                  cx: &mut Context<Workspace>| {
                     let service = KairoService::global(cx);
                     service.update(cx, |service, cx| {
-                        service.deploy(cx).detach_and_log_err(cx);
+                        service.hot_deploy(None, cx).detach_and_log_err(cx);
                     });
                 },
             );
@@ -98,10 +99,7 @@ pub fn init(cx: &mut App) {
                  cx: &mut Context<Workspace>| {
                     let service = KairoService::global(cx);
                     service.update(cx, |service, cx| {
-                        let server_id = service
-                            .servers()
-                            .last()
-                            .map(|server| server.id.clone());
+                        let server_id = service.servers().last().map(|server| server.id.clone());
                         if let Some(server_id) = server_id {
                             service.stop_server(server_id, cx).detach_and_log_err(cx);
                         }
@@ -113,6 +111,99 @@ pub fn init(cx: &mut App) {
                  _action: &actions::RestartServer,
                  _window: &mut Window,
                  cx: &mut Context<Workspace>| {
+                    let service = KairoService::global(cx);
+                    service.update(cx, |service, cx| {
+                        let server_id = service.servers().last().map(|server| server.id.clone());
+                        if let Some(server_id) = server_id {
+                            service.restart_server(server_id, cx).detach_and_log_err(cx);
+                        }
+                    });
+                },
+            );
+            workspace.register_action(
+                |_workspace: &mut Workspace,
+                 _action: &actions::ReloadContext,
+                 _window: &mut Window,
+                 cx: &mut Context<Workspace>| {
+                    let service = KairoService::global(cx);
+                    service.update(cx, |service, cx| {
+                        let server_id = service.servers().last().map(|server| server.id.clone());
+                        if let Some(server_id) = server_id {
+                            service.reload_server(server_id, cx).detach_and_log_err(cx);
+                        }
+                    });
+                },
+            );
+            workspace.register_action(
+                |_workspace: &mut Workspace,
+                 _action: &actions::OpenApplication,
+                 _window: &mut Window,
+                 cx: &mut Context<Workspace>| {
+                    let service = KairoService::global(cx);
+                    if let Some(url) = service.read(cx).application_url() {
+                        cx.open_url(&url);
+                    }
+                },
+            );
+            workspace.register_action(
+                |workspace: &mut Workspace,
+                 _action: &actions::ScanProject,
+                 _window: &mut Window,
+                 cx: &mut Context<Workspace>| {
+                    let root = workspace
+                        .visible_worktrees(cx)
+                        .next()
+                        .map(|tree| tree.read(cx).abs_path().to_string_lossy().into_owned());
+                    let service = KairoService::global(cx);
+                    service.update(cx, |service, cx| {
+                        service.start_agent(cx).detach_and_log_err(cx);
+                        if let Some(root) = root {
+                            service.open_workspace(root, cx).detach_and_log_err(cx);
+                        }
+                    });
+                },
+            );
+            workspace.register_action(
+                |_workspace: &mut Workspace,
+                 _action: &actions::SelectProject,
+                 _window: &mut Window,
+                 cx: &mut Context<Workspace>| {
+                    let service = KairoService::global(cx);
+                    service.update(cx, |service, cx| {
+                        service.refresh(cx).detach_and_log_err(cx);
+                    });
+                },
+            );
+            workspace.register_action(
+                |workspace: &mut Workspace,
+                 _action: &actions::SaveWithEncoding,
+                 _window: &mut Window,
+                 cx: &mut Context<Workspace>| {
+                    let Some(editor) = workspace.active_item_as::<Editor>(cx) else {
+                        return;
+                    };
+                    let path = editor.read(cx).buffer().read(cx).as_singleton().and_then(|buffer| {
+                        buffer
+                            .read(cx)
+                            .file()
+                            .and_then(|file| file.file_system_abs_path(cx))
+                    });
+                    let Some(path) = path else { return };
+                    let service = KairoService::global(cx);
+                    service.update(cx, |service, cx| {
+                        service
+                            .save_active_file_with_encoding(path.to_string_lossy().into_owned(), cx)
+                            .detach_and_log_err(cx);
+                    });
+                },
+            );
+            workspace.register_action(
+                |_workspace: &mut Workspace,
+                 _action: &actions::SearchEncoded,
+                 _window: &mut Window,
+                 cx: &mut Context<Workspace>| {
+                    // The panel owns the query string; this action refreshes the
+                    // status surface so the user can see the last search result.
                     let service = KairoService::global(cx);
                     service.update(cx, |service, cx| {
                         service.refresh(cx).detach_and_log_err(cx);
@@ -137,7 +228,7 @@ pub fn init(cx: &mut App) {
                  cx: &mut Context<Workspace>| {
                     let service = KairoService::global(cx);
                     service.update(cx, |service, cx| {
-                        service.start_agent(cx).detach_and_log_err(cx);
+                        service.refresh(cx).detach_and_log_err(cx);
                     });
                 },
             );

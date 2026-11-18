@@ -42,6 +42,24 @@ impl KairoPanel {
         })?;
         Ok(panel)
     }
+
+    fn action_button(
+        &self,
+        label: &'static str,
+        cx: &mut Context<Self>,
+        handler: impl Fn(&mut KairoService, &mut Context<KairoService>) + 'static,
+    ) -> impl IntoElement {
+        div()
+            .px_2()
+            .py_1()
+            .rounded_md()
+            .border_1()
+            .on_click(cx.listener(move |_panel, _event, _window, cx| {
+                let service = KairoService::global(cx);
+                service.update(cx, |service, cx| handler(service, cx));
+            }))
+            .child(label)
+    }
 }
 
 impl Focusable for KairoPanel {
@@ -98,7 +116,7 @@ impl Panel for KairoPanel {
     }
 
     fn enabled(&self, cx: &App) -> bool {
-        self.workspace.read(cx).is_ok()
+        self.workspace.read_with(cx, |_, _| true).is_ok()
     }
 }
 
@@ -106,22 +124,20 @@ impl Render for KairoPanel {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let service = KairoService::global(cx);
         let state = service.read(cx);
+        let settings = state.settings();
         let status = SharedString::from(state.status_message().to_owned());
-        let error = state
-            .last_error()
-            .map(SharedString::from)
-            .unwrap_or_else(|| SharedString::from(""));
 
         let toolchains = state
             .toolchains()
             .iter()
             .map(|toolchain| {
                 format!(
-                    "{} {} ({})",
+                    "{} {} [{}] — {}",
                     toolchain.vendor,
                     toolchain.version,
+                    toolchain.kind,
                     if toolchain.fingerprint.is_empty() {
-                        "unverified"
+                        "UNVERIFIED"
                     } else {
                         "fingerprinted"
                     }
@@ -134,9 +150,22 @@ impl Render for KairoPanel {
             .iter()
             .map(|server| {
                 format!(
-                    "{}: {} (gen {}, port {})",
+                    "{}: {} (gen {}, http {})",
                     server.id, server.state, server.generation, server.ports.http
                 )
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        let projects = state
+            .projects()
+            .iter()
+            .map(|project| {
+                let marker = if state.active_project_id() == Some(project.id.as_str()) {
+                    "* "
+                } else {
+                    "  "
+                };
+                format!("{marker}{} ({})", project.name, project.id)
             })
             .collect::<Vec<_>>()
             .join("\n");
@@ -149,6 +178,46 @@ impl Render for KairoPanel {
             .collect::<Vec<_>>()
             .join("\n");
 
+        let toolchain_slots = format!(
+            "LS JRE: {}\nCompiler JDK: {}\nTomcat JDK: {}\nSource/Target: {}/{}\nEncoding: {}",
+            if settings.language_server_java_home.is_empty() {
+                "<not set>"
+            } else {
+                &settings.language_server_java_home
+            },
+            if settings.compiler_java_home.is_empty() {
+                "<not set — JDK 6 required for 1.6>"
+            } else {
+                &settings.compiler_java_home
+            },
+            if settings.tomcat_java_home.is_empty() {
+                "<agent default>"
+            } else {
+                &settings.tomcat_java_home
+            },
+            settings.source_level,
+            settings.target_level,
+            settings.encoding,
+        );
+
+        let detected = state
+            .detected()
+            .iter()
+            .map(|layout| {
+                format!(
+                    "{}: {} ({})",
+                    layout.root_path,
+                    layout.build_system,
+                    if layout.warnings.is_empty() {
+                        "no warnings"
+                    } else {
+                        "has warnings"
+                    }
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+
         div()
             .flex()
             .flex_col()
@@ -156,8 +225,28 @@ impl Render for KairoPanel {
             .gap_2()
             .p_3()
             .child(div().text_sm().child(status))
-            .when(!error.is_empty(), |this| {
-                this.child(div().text_xs().child(error))
+            .child(
+                div()
+                    .text_xs()
+                    .child(SharedString::from(format!(
+                        "Encoding: {} | Hot reload: {}",
+                        state
+                            .encoding()
+                            .map(|encoding| encoding.encoding.clone())
+                            .unwrap_or_else(|| "not detected".to_owned()),
+                        if state.hot_reload_mode().is_empty() {
+                            "idle"
+                        } else {
+                            state.hot_reload_mode()
+                        }
+                    ))),
+            )
+            .when_some(state.last_error().map(SharedString::from), |this, error| {
+                this.child(
+                    div()
+                        .text_xs()
+                        .child(SharedString::from(format!("ERROR: {error}"))),
+                )
             })
             .child(
                 div()
@@ -169,11 +258,26 @@ impl Render for KairoPanel {
                     .child(self.action_button("Clean Build", cx, |service, cx| {
                         service.compile(true, cx).detach_and_log_err(cx);
                     }))
+                    .child(self.action_button("Build & Deploy", cx, |service, cx| {
+                        service.build_and_deploy(cx).detach_and_log_err(cx);
+                    }))
                     .child(self.action_button("Deploy", cx, |service, cx| {
                         service.deploy(cx).detach_and_log_err(cx);
                     }))
+                    .child(self.action_button("Hot Deploy", cx, |service, cx| {
+                        service.hot_deploy(None, cx).detach_and_log_err(cx);
+                    }))
                     .child(self.action_button("Start Server", cx, |service, cx| {
-                        service.start_agent(cx).detach_and_log_err(cx);
+                        service.start_server(false, cx).detach_and_log_err(cx);
+                    }))
+                    .child(self.action_button("Debug", cx, |service, cx| {
+                        service.start_server(true, cx).detach_and_log_err(cx);
+                    }))
+                    .child(self.action_button("Stop", cx, |service, cx| {
+                        let server_id = service.servers().last().map(|server| server.id.clone());
+                        if let Some(server_id) = server_id {
+                            service.stop_server(server_id, cx).detach_and_log_err(cx);
+                        }
                     }))
                     .child(self.action_button("Refresh", cx, |service, cx| {
                         service.refresh(cx).detach_and_log_err(cx);
@@ -183,43 +287,26 @@ impl Render for KairoPanel {
                 div()
                     .flex()
                     .gap_4()
-                    .child(
-                        div()
-                            .flex_1()
-                            .child(SharedString::from(format!(
-                                "Toolchains\n{toolchains}"
-                            ))),
-                    )
-                    .child(
-                        div()
-                            .flex_1()
-                            .child(SharedString::from(format!("Servers\n{servers}"))),
-                    ),
+                    .child(div().flex_1().child(SharedString::from(format!(
+                        "Projects (active marked *)\n{projects}"
+                    ))))
+                    .child(div().flex_1().child(SharedString::from(format!(
+                        "Toolchains\n{toolchains}"
+                    ))))
+                    .child(div().flex_1().child(SharedString::from(toolchain_slots)))
+                    .child(div().flex_1().child(SharedString::from(format!(
+                        "Servers\n{servers}"
+                    )))),
             )
             .child(
-                div()
-                    .flex_1()
-                    .child(SharedString::from(format!("Logs\n{logs}"))),
+                div().flex_1().child(SharedString::from(format!(
+                    "Tomcat logs (last {MAX_VISIBLE_LOG_LINES})\n{logs}"
+                ))),
             )
-    }
-}
-
-impl KairoPanel {
-    fn action_button(
-        &self,
-        label: &'static str,
-        cx: &mut Context<Self>,
-        handler: impl Fn(&mut KairoService, &mut Context<KairoService>) + 'static,
-    ) -> impl IntoElement {
-        div()
-            .px_2()
-            .py_1()
-            .rounded_md()
-            .border_1()
-            .on_click(cx.listener(move |_panel, _event, _window, cx| {
-                let service = KairoService::global(cx);
-                service.update(cx, |service, cx| handler(service, cx));
-            }))
-            .child(label)
+            .when(!detected.is_empty(), |this| {
+                this.child(div().text_xs().child(SharedString::from(format!(
+                    "Detected layouts:\n{detected}"
+                ))))
+            })
     }
 }

@@ -214,6 +214,8 @@ pub struct BuildRequest {
 #[serde(rename_all = "camelCase")]
 pub struct Diagnostic {
     #[serde(default)]
+    pub code: String,
+    #[serde(default)]
     pub file: String,
     #[serde(default)]
     pub line: u32,
@@ -278,8 +280,16 @@ pub struct StartServerRequest {
     pub project_id: String,
     #[serde(default)]
     pub debug: bool,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub java_home: String,
     #[serde(default)]
-    pub configuration: Option<String>,
+    pub context_path: String,
+    #[serde(default)]
+    pub http_port: u16,
+    #[serde(default)]
+    pub debug_port: u16,
+    #[serde(default)]
+    pub jvm_options: Vec<String>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -388,7 +398,25 @@ pub struct DebugAdapterStatus {
     #[serde(default)]
     pub host_jdk: String,
     #[serde(default)]
+    pub bridge_path: String,
+    #[serde(default)]
     pub message: String,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ValidateEncodingRequest {
+    pub text: String,
+    pub encoding: String,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ValidateEncodingResponse {
+    #[serde(default)]
+    pub valid: bool,
+    #[serde(default)]
+    pub error: String,
 }
 
 /// Convert an API error into a human-readable message that preserves the

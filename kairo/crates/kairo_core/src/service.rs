@@ -1,16 +1,25 @@
 //! Application-level service that owns the Kairo agent and its derived state.
+//!
+//! This is the single Zed-side entry point for every legacy operation. It
+//! always routes OS effects through the Go agent (Kairo ADR-0002) and always
+//! surfaces the agent's real error codes to the UI — never a false green.
 
-use std::sync::Arc;
+use std::{
+    path::PathBuf,
+    sync::Arc,
+    time::Duration,
+};
 
 use anyhow::{Context as _, Result, anyhow};
 use gpui::{App, Context, Entity, Global, Task};
 use http_client::HttpClient;
 
 use crate::{
-    agent::{AgentHandle, AgentLaunchConfig, spawn_agent},
+    agent::{AgentHandle, AgentLaunchConfig, BridgeHandle, spawn_agent, spawn_debug_bridge},
     client::{KairoClient, global_http_client},
     domain::{
-        BuildRequest, BuildResult, DeployRequest, DeployResult, LogLine, Project, ServerResponse,
+        BuildRequest, BuildResult, DebugAdapterStatus, DeployRequest, DeployResult,
+        DetectedProjectLayout, EncodingDetection, LogLine, Project, RecodeRequest, ServerResponse,
         StartServerRequest, Toolchain, WorkspaceRecord,
     },
     settings::KairoSettings,
@@ -32,10 +41,17 @@ pub struct KairoService {
     builds: Vec<BuildResult>,
     servers: Vec<ServerResponse>,
     logs: Vec<LogLine>,
+    detected: Vec<DetectedProjectLayout>,
     active_workspace_id: Option<String>,
     active_project_id: Option<String>,
     status_message: String,
     last_error: Option<String>,
+    encoding: Option<EncodingDetection>,
+    hot_reload_mode: String,
+    debug_gate: Option<DebugAdapterStatus>,
+    bridge: Option<BridgeHandle>,
+    pending_deploy: bool,
+    build_task: Option<Task<()>>,
     poll_task: Option<Task<()>>,
 }
 
@@ -52,10 +68,17 @@ impl KairoService {
             builds: Vec::new(),
             servers: Vec::new(),
             logs: Vec::new(),
+            detected: Vec::new(),
             active_workspace_id: None,
             active_project_id: None,
             status_message: "Kairo agent is not running".to_owned(),
             last_error: None,
+            encoding: None,
+            hot_reload_mode: String::new(),
+            debug_gate: None,
+            bridge: None,
+            pending_deploy: false,
+            build_task: None,
             poll_task: None,
         }
     }
@@ -110,30 +133,54 @@ impl KairoService {
         &self.logs
     }
 
+    pub fn detected(&self) -> &[DetectedProjectLayout] {
+        &self.detected
+    }
+
+    pub fn encoding(&self) -> Option<&EncodingDetection> {
+        self.encoding.as_ref()
+    }
+
+    pub fn hot_reload_mode(&self) -> &str {
+        &self.hot_reload_mode
+    }
+
+    pub fn debug_gate(&self) -> Option<&DebugAdapterStatus> {
+        self.debug_gate.as_ref()
+    }
+
     pub fn active_project_id(&self) -> Option<&str> {
         self.active_project_id.as_deref()
+    }
+
+    pub fn active_workspace_id(&self) -> Option<&str> {
+        self.active_workspace_id.as_deref()
     }
 
     pub fn agent_base_url(&self) -> Option<String> {
         self.agent.as_ref().map(|agent| agent.base_url())
     }
 
-    fn resolve_agent_path(&self) -> std::path::PathBuf {
+    /// URL of the last started server, used by `kairo::OpenApplication`.
+    pub fn application_url(&self) -> Option<String> {
+        self.servers.last().map(|server| server.url.clone())
+    }
+
+    fn resolve_agent_path(&self) -> PathBuf {
         if !self.settings.agent_path.is_empty() {
-            return std::path::PathBuf::from(&self.settings.agent_path);
+            return PathBuf::from(&self.settings.agent_path);
         }
         if let Ok(path) = std::env::var("KAIRO_AGENT_PATH")
             && !path.is_empty()
         {
-            return std::path::PathBuf::from(path);
+            return PathBuf::from(path);
         }
-        // Default: the locally built agent in the companion Kairo IDE checkout.
-        std::path::PathBuf::from(r"G:\spaces\kairo-ide\runtime-agent\kairo-runtime.exe")
+        PathBuf::from(r"G:\spaces\kairo-ide\runtime-agent\kairo-runtime.exe")
     }
 
-    fn resolve_data_dir(&self) -> std::path::PathBuf {
+    fn resolve_data_dir(&self) -> PathBuf {
         if !self.settings.data_dir.is_empty() {
-            return std::path::PathBuf::from(&self.settings.data_dir);
+            return PathBuf::from(&self.settings.data_dir);
         }
         let base = dirs::state_dir()
             .or_else(dirs::data_local_dir)
@@ -141,20 +188,32 @@ impl KairoService {
         base.join("kairo-zed")
     }
 
-    /// Start the Go runtime agent and then load the initial catalogs.
+    fn bundled_dir(&self) -> Option<PathBuf> {
+        if self.settings.bundled_dir.is_empty() {
+            None
+        } else {
+            Some(PathBuf::from(&self.settings.bundled_dir))
+        }
+    }
+
+    /// Report an operation failure in the UI. This is the counterpart of the
+    /// agent's closed error enum — no error may disappear into the console.
+    fn set_error(&mut self, error: &anyhow::Error, cx: &mut Context<Self>) {
+        self.last_error = Some(format!("{error:#}"));
+        self.status_message = "Kairo operation failed".to_owned();
+        cx.notify();
+    }
+
+    /// Start the Go runtime agent, then load its catalogs and try to select a
+    /// project automatically (the common single-project case).
     pub fn start_agent(&mut self, cx: &mut Context<Self>) -> Task<Result<()>> {
         if self.client.is_some() {
-            return Task::ready(Ok(()));
+            return self.refresh(cx);
         }
-
         let config = AgentLaunchConfig {
             agent_path: self.resolve_agent_path(),
             data_dir: self.resolve_data_dir(),
-            bundled_dir: if self.settings.bundled_dir.is_empty() {
-                None
-            } else {
-                Some(std::path::PathBuf::from(&self.settings.bundled_dir))
-            },
+            bundled_dir: self.bundled_dir(),
             bind_address: "127.0.0.1".to_owned(),
             log_level: "info".to_owned(),
             port: 0,
@@ -180,80 +239,259 @@ impl KairoService {
                 service.last_error = None;
                 cx.notify();
             })?;
-
+            this.update(cx, |service, cx| {
+                service.refresh(cx).detach_and_log_err(cx);
+            })?;
             Ok(())
         })
     }
 
-    /// Refresh workspaces, projects, toolchains, and servers from the agent.
+    /// Refresh catalogs. With exactly one project it becomes the active one —
+    /// this is what makes Compile/Deploy/Start work out of the box.
     pub fn refresh(&mut self, cx: &mut Context<Self>) -> Task<Result<()>> {
         let Ok(client) = self.client() else {
             return Task::ready(Err(anyhow!("Kairo runtime agent is not running")));
         };
         cx.spawn(async move |this, cx| {
-            let workspaces = client.list_workspaces().await?;
-            let projects = client.list_projects().await?;
-            let toolchains = client.list_toolchains().await?;
-            let mut servers = Vec::new();
-            for workspace in &workspaces {
-                if let Ok(server_list) = client.get_servers_for_workspace(&workspace.id).await {
-                    servers.extend(server_list);
+            let result = async {
+                let workspaces = client.list_workspaces().await?;
+                let projects = client.list_projects().await?;
+                let toolchains = client.list_toolchains().await?;
+                let mut servers = Vec::new();
+                for workspace in &workspaces {
+                    if let Ok(list) = client.get_servers_for_workspace(&workspace.id).await {
+                        servers.extend(list);
+                    }
+                }
+                Ok::<_, anyhow::Error>((workspaces, projects, toolchains, servers))
+            }
+            .await;
+
+            match result {
+                Ok((workspaces, projects, toolchains, servers)) => {
+                    this.update(cx, |service, cx| {
+                        service.workspaces = workspaces;
+                        service.projects = projects;
+                        service.toolchains = toolchains;
+                        service.servers = servers;
+                        service.last_error = None;
+                        if service.active_project_id.is_none() && service.projects.len() == 1 {
+                            let id = service.projects[0].id.clone();
+                            service.activate_project(id, cx);
+                        }
+                        cx.notify();
+                    })?;
+                    Ok(())
+                }
+                Err(error) => {
+                    this.update(cx, |service, cx| service.set_error(&error, cx))?;
+                    Err(error)
                 }
             }
-            this.update(cx, |service, cx| {
-                service.workspaces = workspaces;
-                service.projects = projects;
-                service.toolchains = toolchains;
-                service.servers = servers;
-                service.last_error = None;
-                cx.notify();
-            })?;
-            Ok(())
         })
     }
 
-    pub fn open_workspace(
-        &mut self,
-        root_path: impl Into<String>,
-        cx: &mut Context<Self>,
-    ) -> Task<Result<()>> {
+    /// Select a project as active and push the three-toolchain settings into
+    /// its registered config (the agent derives build levels from the project).
+    pub fn activate_project(&mut self, project_id: String, cx: &mut Context<Self>) {
+        self.active_project_id = Some(project_id.clone());
+        self.last_error = None;
+        self.status_message = format!("Active project: {project_id}");
+        cx.notify();
+
+        let Some(client) = self.client.clone() else {
+            return;
+        };
+        let Some(project) = self.projects.iter().find(|item| item.id == project_id).cloned() else {
+            return;
+        };
+        let workspace_id = self.active_workspace_id.clone().unwrap_or_default();
+        let mut config = serde_json::to_value(&project).unwrap_or_default();
+        if let Some(object) = config.as_object_mut() {
+            object.insert("sourceLevel".into(), serde_json::json!(self.settings.source_level));
+            object.insert("targetLevel".into(), serde_json::json!(self.settings.target_level));
+            object.insert("encoding".into(), serde_json::json!(self.settings.encoding));
+        }
+        cx.spawn(async move |this, cx| {
+            let update = client.update_project(&project_id, &config).await;
+            let prepare = match update {
+                Ok(_) => client.prepare_jdtls(&workspace_id).await.map(|_| ()),
+                Err(error) => Err(error),
+            };
+            if let Err(error) = prepare {
+                let error = error.context("failed to apply Kairo project settings");
+                this.update(cx, |service, cx| service.set_error(&error, cx))
+                    .log_err();
+            }
+        })
+        .detach();
+    }
+
+    /// Open a workspace and scan it for a legacy project layout.
+    pub fn open_workspace(&mut self, root_path: impl Into<String>, cx: &mut Context<Self>) -> Task<Result<()>> {
         let Ok(client) = self.client() else {
             return Task::ready(Err(anyhow!("Kairo runtime agent is not running")));
         };
         let root_path = root_path.into();
         cx.spawn(async move |this, cx| {
-            let workspace = client.open_workspace(root_path).await?;
-            this.update(cx, |service, cx| {
-                service.active_workspace_id = Some(workspace.id.clone());
-                service.workspaces.push(workspace);
-                cx.notify();
-            })?;
-            Ok(())
+            match client.open_workspace(&root_path).await {
+                Ok(workspace) => {
+                    let id = workspace.id.clone();
+                    this.update(cx, |service, cx| {
+                        service.active_workspace_id = Some(id.clone());
+                        service.workspaces.push(workspace);
+                        cx.notify();
+                    })?;
+                    this.update(cx, |service, cx| service.scan_workspace(id, cx))?;
+                    Ok(())
+                }
+                Err(error) => {
+                    this.update(cx, |service, cx| service.set_error(&error, cx))?;
+                    Err(error)
+                }
+            }
         })
     }
 
+    pub fn scan_workspace(&mut self, workspace_id: String, cx: &mut Context<Self>) -> Task<Result<()>> {
+        let Ok(client) = self.client() else {
+            return Task::ready(Err(anyhow!("Kairo runtime agent is not running")));
+        };
+        cx.spawn(async move |this, cx| {
+            match client.scan_project(&workspace_id).await {
+                Ok(detection) => {
+                    this.update(cx, |service, cx| {
+                        service.detected = detection.detected;
+                        service.status_message = format!(
+                            "Detected {} legacy project layout(s)",
+                            service.detected.len()
+                        );
+                        service.last_error = None;
+                        cx.notify();
+                    })?;
+                    Ok(())
+                }
+                Err(error) => {
+                    this.update(cx, |service, cx| service.set_error(&error, cx))?;
+                    Err(error)
+                }
+            }
+        })
+    }
+
+    /// Compile, then poll to a terminal state so diagnostics and fail-closed
+    /// toolchain errors actually reach the user.
     pub fn compile(&mut self, clean: bool, cx: &mut Context<Self>) -> Task<Result<()>> {
+        self.pending_deploy = false;
+        self.start_build(clean, cx)
+    }
+
+    pub fn build_and_deploy(&mut self, cx: &mut Context<Self>) -> Task<Result<()>> {
+        self.pending_deploy = true;
+        self.start_build(false, cx)
+    }
+
+    fn start_build(&mut self, clean: bool, cx: &mut Context<Self>) -> Task<Result<()>> {
         let Ok(client) = self.client() else {
             return Task::ready(Err(anyhow!("Kairo runtime agent is not running")));
         };
         let Some(project_id) = self.active_project_id.clone() else {
-            return Task::ready(Err(anyhow!("no active Kairo project")));
+            return Task::ready(Err(anyhow!("no active Kairo project — use Kairo: Select Project")));
         };
         cx.spawn(async move |this, cx| {
             let request = BuildRequest {
-                project_id: project_id.clone(),
+                project_id,
                 clean,
                 intent: Some("manual".to_owned()),
                 selected_files: Vec::new(),
             };
-            let build = client.start_build(&request).await?;
-            this.update(cx, |service, cx| {
-                service.builds.insert(0, build.clone());
-                service.status_message = format!("Build {} is {}", build.id, build.state);
-                cx.notify();
-            })?;
-            Ok(())
+            match client.start_build(&request).await {
+                Ok(build) => {
+                    let id = build.id.clone();
+                    this.update(cx, |service, cx| {
+                        service.builds.insert(0, build.clone());
+                        service.status_message = format!("Build {id} is {}", build.state);
+                        service.last_error = None;
+                        service.start_build_polling(id, cx);
+                        cx.notify();
+                    })?;
+                    Ok(())
+                }
+                Err(error) => {
+                    this.update(cx, |service, cx| service.set_error(&error, cx))?;
+                    Err(error)
+                }
+            }
         })
+    }
+
+    fn start_build_polling(&mut self, build_id: String, cx: &mut Context<Self>) {
+        let executor = cx.background_executor().clone();
+        self.build_task = Some(cx.spawn(async move |this, cx| {
+            for _ in 0..240 {
+                executor.timer(Duration::from_millis(500)).await;
+                let Some(client) = this
+                    .read_with(cx, |service, _| service.client.clone())
+                    .ok()
+                else {
+                    return;
+                };
+                let Ok(build) = client.build(&build_id).await else { continue };
+                let terminal = !matches!(build.state.as_str(), "queued" | "running");
+                let should_deploy = build.state == "success";
+                let pending = this
+                    .read_with(cx, |service, _| service.pending_deploy)
+                    .unwrap_or(false);
+                let error = if build.state == "failure" {
+                    build
+                        .diagnostics
+                        .iter()
+                        .find(|diagnostic| !diagnostic.code.is_empty())
+                        .map(|diagnostic| diagnostic.code.clone())
+                        .unwrap_or_else(|| "compile_failed".to_owned())
+                } else {
+                    String::new()
+                };
+                let failed = is_toolchain_incompatible_code(&error);
+                let result = this.update(cx, |service, cx| {
+                    if let Some(existing) = service
+                        .builds
+                        .iter_mut()
+                        .find(|item| item.id == build_id)
+                    {
+                        *existing = build.clone();
+                    }
+                    service.status_message = format!(
+                        "Build {} is {}{}",
+                        build.id,
+                        build.state,
+                        if build.state == "success" {
+                            format!(" ({} files)", build.files_compiled)
+                        } else {
+                            String::new()
+                        }
+                    );
+                    if !error.is_empty() {
+                        service.last_error = Some(if failed {
+                            format!(
+                                "{error}: a real JDK 6 is required for source level 1.6; \
+                                 importing a modern JDK is not a substitute"
+                            )
+                        } else {
+                            format!("{error}: {}", build.output)
+                        });
+                    }
+                    if should_deploy && pending {
+                        service.pending_deploy = false;
+                        service.deploy(cx).detach_and_log_err(cx);
+                    }
+                    cx.notify();
+                });
+                if result.is_err() || terminal {
+                    return;
+                }
+            }
+        }));
     }
 
     pub fn deploy(&mut self, cx: &mut Context<Self>) -> Task<Result<()>> {
@@ -265,8 +503,8 @@ impl KairoService {
         };
         let build_id = self
             .builds
-            .first()
-            .filter(|build| build.state == "success")
+            .iter()
+            .find(|build| build.state == "success")
             .map(|build| build.id.clone())
             .unwrap_or_default();
         cx.spawn(async move |this, cx| {
@@ -275,15 +513,84 @@ impl KairoService {
                 build_id,
                 scope: "incremental".to_owned(),
             };
-            let result: DeployResult = client.deploy(&request).await?;
-            this.update(cx, |service, cx| {
-                service.status_message = format!("Deployment {} is {}", result.id, result.state);
-                cx.notify();
-            })?;
-            Ok(())
+            match client.deploy(&request).await {
+                Ok(result) => {
+                    let mode = result.hot_reload_mode.clone();
+                    this.update(cx, |service, cx| {
+                        service.hot_reload_mode = mode.clone();
+                        service.status_message = format!(
+                            "Deployment {} is {} ({})",
+                            result.id, result.state, mode
+                        );
+                        service.last_error = None;
+                        cx.notify();
+                    })?;
+                    Ok(())
+                }
+                Err(error) => {
+                    this.update(cx, |service, cx| service.set_error(&error, cx))?;
+                    Err(error)
+                }
+            }
         })
     }
 
+    /// Hot deploy with honest status: Java changes go through incremental
+    /// compile, everything else through static sync. `restart_required` is
+    /// never reported as `synced`.
+    pub fn hot_deploy(&mut self, java_file: Option<String>, cx: &mut Context<Self>) -> Task<Result<()>> {
+        let Ok(client) = self.client() else {
+            return Task::ready(Err(anyhow!("Kairo runtime agent is not running")));
+        };
+        if let Some(file) = java_file {
+            let project_id = self.active_project_id.clone().unwrap_or_default();
+            cx.spawn(async move |this, cx| {
+                let payload = serde_json::json!({ "file": file, "projectId": project_id });
+                match client.jvm_compile(payload).await {
+                    Ok(_) => {
+                        this.update(cx, |service, cx| {
+                            service.hot_reload_mode = "compileOnly → restart_required".to_owned();
+                            service.status_message =
+                                "Incremental compile done; Tomcat reloadable=false → restart_required".to_owned();
+                            cx.notify();
+                        })?;
+                        Ok(())
+                    }
+                    Err(error) => {
+                        this.update(cx, |service, cx| service.set_error(&error, cx))?;
+                        Err(error)
+                    }
+                }
+            })
+        } else {
+            self.deploy(cx)
+        }
+    }
+
+    /// Verify the Java 6 / Tomcat 6 / JDWP gate before offering debug.
+    pub fn check_debug_gate(&mut self, cx: &mut Context<Self>) -> Task<Result<DebugAdapterStatus>> {
+        let Ok(client) = self.client() else {
+            return Task::ready(Err(anyhow!("Kairo runtime agent is not running")));
+        };
+        cx.spawn(async move |this, cx| {
+            match client.debug_adapter_status().await {
+                Ok(status) => {
+                    this.update(cx, |service, cx| {
+                        service.debug_gate = Some(status.clone());
+                        cx.notify();
+                    })?;
+                    Ok(status)
+                }
+                Err(error) => {
+                    this.update(cx, |service, cx| service.set_error(&error, cx))?;
+                    Err(error)
+                }
+            }
+        })
+    }
+
+    /// Start Tomcat, optionally with JDWP, and launch the JDI bridge so Zed's
+    /// DAP adapter has something to attach to.
     pub fn start_server(&mut self, debug: bool, cx: &mut Context<Self>) -> Task<Result<()>> {
         let Ok(client) = self.client() else {
             return Task::ready(Err(anyhow!("Kairo runtime agent is not running")));
@@ -291,53 +598,94 @@ impl KairoService {
         let Some(project_id) = self.active_project_id.clone() else {
             return Task::ready(Err(anyhow!("no active Kairo project")));
         };
-        let debug_port = self.settings.debug_port;
-        cx.spawn(async move |this, cx| {
-            let mut request = StartServerRequest {
-                project_id,
-                debug,
-                configuration: None,
-            };
-            if debug {
-                request.configuration = Some(format!("debugPort={debug_port}"));
-            }
-            let server = client.start_server(&request).await?;
-            let server_id = server.id.clone();
-            this.update(cx, |service, cx| {
-                service.servers.push(server.clone());
-                service.status_message = format!("Server {} is {}", server.id, server.state);
-                service.start_log_polling(server_id, cx);
-                cx.notify();
-            })?;
-            Ok(())
-        })
-    }
-
-    /// Poll the agent's bounded log tail so the panel stays live even before
-    /// the WebSocket event stream is wired up. The task is held in a field, so
-    /// it is cancelled when the service is dropped (no detached work).
-    pub fn start_log_polling(&mut self, server_id: String, cx: &mut Context<Self>) {
+        let request = StartServerRequest {
+            project_id,
+            debug,
+            java_home: self.settings.tomcat_java_home.clone(),
+            context_path: String::new(),
+            http_port: self.settings.tomcat_http_port,
+            debug_port: self.settings.debug_port,
+            jvm_options: Vec::new(),
+        };
+        let settings = self.settings.clone();
+        let bundled_dir = self.bundled_dir();
         let executor = cx.background_executor().clone();
-        self.poll_task = Some(cx.spawn(async move |this, cx| {
-            loop {
-                executor.timer(std::time::Duration::from_secs(2)).await;
-                let Some(client) = this.read(cx).client.clone() else {
-                    return;
-                };
-                let Ok(logs) = client.server_logs(&server_id, 200).await else {
-                    return;
-                };
-                if this
-                    .update(cx, |service, cx| {
-                        service.logs = logs;
+        cx.spawn(async move |this, cx| {
+            if debug {
+                let gate = client.debug_adapter_status().await.context(
+                    "Java debug adapter is unavailable; check the JDI host JDK before debugging",
+                )?;
+                if !gate.available {
+                    let message = format!(
+                        "Java 6 debug gate failed: {} (host JDK: {})",
+                        gate.message, gate.host_jdk
+                    );
+                    this.update(cx, |service, cx| {
+                        service.debug_gate = Some(gate);
+                        service.last_error = Some(message.clone());
                         cx.notify();
-                    })
-                    .is_err()
-                {
-                    return;
+                    })?;
+                    return Err(anyhow!(message));
                 }
             }
-        }));
+            match client.start_server(&request).await {
+                Ok(server) => {
+                    let server_id = server.id.clone();
+                    let debug_port = server.ports.debug;
+                    this.update(cx, |service, cx| {
+                        service.servers.push(server.clone());
+                        service.debug_gate = debug.then_some(DebugAdapterStatus {
+                            available: true,
+                            host_jdk: settings.language_server_java_home.clone(),
+                            bridge_path: String::new(),
+                            message: String::new(),
+                        });
+                        service.status_message =
+                            format!("Server {} is {}", server.id, server.state);
+                        service.start_log_polling(server_id.clone(), cx);
+                        cx.notify();
+                    })?;
+                    if debug {
+                        let jar = bundled_dir
+                            .as_ref()
+                            .map(|dir| dir.join("kairo-jdi-bridge.jar"))
+                            .unwrap_or_else(|| PathBuf::from("kairo-jdi-bridge.jar"));
+                        let java_home = if settings.tomcat_java_home.is_empty() {
+                            None
+                        } else {
+                            Some(PathBuf::from(&settings.tomcat_java_home))
+                        };
+                        match spawn_debug_bridge(
+                            executor,
+                            java_home,
+                            jar,
+                            "127.0.0.1",
+                            if debug_port == 0 { settings.debug_port } else { debug_port },
+                        )
+                        .await
+                        {
+                            Ok(bridge) => {
+                                this.update(cx, |service, cx| {
+                                    service.bridge = Some(bridge);
+                                    service.status_message =
+                                        "JDWP bridge is listening; attach the Zed debug session".to_owned();
+                                    cx.notify();
+                                })?;
+                            }
+                            Err(error) => {
+                                this.update(cx, |service, cx| service.set_error(&error, cx))?;
+                                return Err(error);
+                            }
+                        }
+                    }
+                    Ok(())
+                }
+                Err(error) => {
+                    this.update(cx, |service, cx| service.set_error(&error, cx))?;
+                    Err(error)
+                }
+            }
+        })
     }
 
     pub fn stop_server(&mut self, server_id: String, cx: &mut Context<Self>) -> Task<Result<()>> {
@@ -345,19 +693,77 @@ impl KairoService {
             return Task::ready(Err(anyhow!("Kairo runtime agent is not running")));
         };
         cx.spawn(async move |this, cx| {
-            let server = client.stop_server(&server_id).await?;
-            this.update(cx, |service, cx| {
-                if let Some(existing) = service
-                    .servers
-                    .iter_mut()
-                    .find(|candidate| candidate.id == server_id)
-                {
-                    *existing = server.clone();
+            match client.stop_server(&server_id).await {
+                Ok(server) => {
+                    this.update(cx, |service, cx| {
+                        if let Some(existing) = service
+                            .servers
+                            .iter_mut()
+                            .find(|candidate| candidate.id == server_id)
+                        {
+                            *existing = server.clone();
+                        }
+                        service.bridge = None;
+                        service.status_message = format!("Server {} is {}", server.id, server.state);
+                        cx.notify();
+                    })?;
+                    Ok(())
                 }
-                service.status_message = format!("Server {} is {}", server.id, server.state);
-                cx.notify();
-            })?;
-            Ok(())
+                Err(error) => {
+                    this.update(cx, |service, cx| service.set_error(&error, cx))?;
+                    Err(error)
+                }
+            }
+        })
+    }
+
+    pub fn restart_server(&mut self, server_id: String, cx: &mut Context<Self>) -> Task<Result<()>> {
+        let Ok(client) = self.client() else {
+            return Task::ready(Err(anyhow!("Kairo runtime agent is not running")));
+        };
+        cx.spawn(async move |this, cx| {
+            match client.restart_server(&server_id).await {
+                Ok(server) => {
+                    this.update(cx, |service, cx| {
+                        if let Some(existing) = service
+                            .servers
+                            .iter_mut()
+                            .find(|candidate| candidate.id == server_id)
+                        {
+                            *existing = server.clone();
+                        }
+                        service.status_message = format!("Server {} is {}", server.id, server.state);
+                        cx.notify();
+                    })?;
+                    Ok(())
+                }
+                Err(error) => {
+                    this.update(cx, |service, cx| service.set_error(&error, cx))?;
+                    Err(error)
+                }
+            }
+        })
+    }
+
+    pub fn reload_server(&mut self, server_id: String, cx: &mut Context<Self>) -> Task<Result<()>> {
+        let Ok(client) = self.client() else {
+            return Task::ready(Err(anyhow!("Kairo runtime agent is not running")));
+        };
+        cx.spawn(async move |this, cx| {
+            match client.reload_server(&server_id).await {
+                Ok(result) => {
+                    this.update(cx, |service, cx| {
+                        service.hot_reload_mode = "contextReload".to_owned();
+                        service.status_message = format!("Context reload: {result}");
+                        cx.notify();
+                    })?;
+                    Ok(())
+                }
+                Err(error) => {
+                    this.update(cx, |service, cx| service.set_error(&error, cx))?;
+                    Err(error)
+                }
+            }
         })
     }
 
@@ -366,18 +772,188 @@ impl KairoService {
             return Task::ready(Err(anyhow!("Kairo runtime agent is not running")));
         };
         cx.spawn(async move |this, cx| {
-            let logs = client.server_logs(&server_id, 200).await?;
-            this.update(cx, |service, cx| {
-                service.logs = logs;
-                cx.notify();
-            })?;
-            Ok(())
+            match client.server_logs(&server_id, 200).await {
+                Ok(logs) => {
+                    this.update(cx, |service, cx| {
+                        service.logs = logs;
+                        cx.notify();
+                    })?;
+                    Ok(())
+                }
+                Err(error) => {
+                    this.update(cx, |service, cx| service.set_error(&error, cx))?;
+                    Err(error)
+                }
+            }
         })
     }
 
-    pub fn reload(&self, cx: &App) -> Entity<Self> {
-        Self::global(cx)
+    /// Poll the agent's bounded log tail. The task lives in a field so it is
+    /// cancelled with the service; transient errors do not stop polling.
+    pub fn start_log_polling(&mut self, server_id: String, cx: &mut Context<Self>) {
+        let executor = cx.background_executor().clone();
+        self.poll_task = Some(cx.spawn(async move |this, cx| {
+            loop {
+                executor.timer(Duration::from_secs(2)).await;
+                let Some(client) = this
+                    .read_with(cx, |service, _| service.client.clone())
+                    .ok()
+                else {
+                    return;
+                };
+                if let Ok(logs) = client.server_logs(&server_id, 200).await {
+                    if this
+                        .update(cx, |service, cx| {
+                            service.logs = logs;
+                            cx.notify();
+                        })
+                        .is_err()
+                    {
+                        return;
+                    }
+                }
+            }
+        }));
     }
+
+    /// Detect the on-disk encoding of a file and remember it for the panel.
+    pub fn detect_encoding(&mut self, file: String, cx: &mut Context<Self>) -> Task<Result<()>> {
+        let Ok(client) = self.client() else {
+            return Task::ready(Err(anyhow!("Kairo runtime agent is not running")));
+        };
+        cx.spawn(async move |this, cx| {
+            match client.detect_encoding(&file).await {
+                Ok(detection) => {
+                    this.update(cx, |service, cx| {
+                        service.encoding = Some(detection);
+                        cx.notify();
+                    })?;
+                    Ok(())
+                }
+                Err(error) => {
+                    this.update(cx, |service, cx| service.set_error(&error, cx))?;
+                    Err(error)
+                }
+            }
+        })
+    }
+
+    /// Detect a file's real encoding, then atomically recode it to the
+    /// configured project encoding. This is the user-facing "Save with
+    /// encoding" flow: no lossy UTF-8 conversion happens in Zed.
+    pub fn save_active_file_with_encoding(&mut self, file: String, cx: &mut Context<Self>) -> Task<Result<()>> {
+        let Ok(client) = self.client() else {
+            return Task::ready(Err(anyhow!("Kairo runtime agent is not running")));
+        };
+        let to = self.settings.encoding.clone();
+        cx.spawn(async move |this, cx| {
+            let detection = client
+                .detect_encoding(&file)
+                .await
+                .context("failed to detect the file's on-disk encoding")?;
+            let from = if detection.encoding.is_empty() {
+                "utf-8".to_owned()
+            } else {
+                detection.encoding.clone()
+            };
+            let request = RecodeRequest {
+                file: file.clone(),
+                from,
+                to: to.clone(),
+                eol: None,
+            };
+            match client.recode(&request).await {
+                Ok(_) => {
+                    this.update(cx, |service, cx| {
+                        service.encoding = Some(detection);
+                        service.status_message = format!("Saved {file} as {to} (atomic recode)");
+                        service.last_error = None;
+                        cx.notify();
+                    })?;
+                    Ok(())
+                }
+                Err(error) => {
+                    this.update(cx, |service, cx| service.set_error(&error, cx))?;
+                    Err(error)
+                }
+            }
+        })
+    }
+
+    /// Byte-faithful "Save with encoding": the agent decodes strictly, checks
+    /// representability, and rewrites the file atomically. No lossy UTF-8
+    /// conversion happens in Zed.
+    pub fn save_with_encoding(
+        &mut self,
+        file: String,
+        from: String,
+        to: String,
+        cx: &mut Context<Self>,
+    ) -> Task<Result<()>> {
+        let Ok(client) = self.client() else {
+            return Task::ready(Err(anyhow!("Kairo runtime agent is not running")));
+        };
+        cx.spawn(async move |this, cx| {
+            let request = RecodeRequest {
+                file: file.clone(),
+                from: from.clone(),
+                to: to.clone(),
+                eol: None,
+            };
+            match client.recode(&request).await {
+                Ok(_) => {
+                    this.update(cx, |service, cx| {
+                        service.status_message = format!("Saved {file} as {to} (atomic recode)");
+                        service.last_error = None;
+                        cx.notify();
+                    })?;
+                    Ok(())
+                }
+                Err(error) => {
+                    this.update(cx, |service, cx| service.set_error(&error, cx))?;
+                    Err(error)
+                }
+            }
+        })
+    }
+
+    /// Encoding-aware search. Zed's native search is UTF-8 only, so GBK
+    /// projects must go through the agent.
+    pub fn search(&mut self, query: String, cx: &mut Context<Self>) -> Task<Result<serde_json::Value>> {
+        let Ok(client) = self.client() else {
+            return Task::ready(Err(anyhow!("Kairo runtime agent is not running")));
+        };
+        let encoding = self.settings.encoding.clone();
+        cx.spawn(async move |this, cx| {
+            let payload = serde_json::json!({
+                "query": query,
+                "isRegex": false,
+                "caseSensitive": false,
+                "wholeWord": false,
+                "maxResults": 10000,
+                "projectEncoding": encoding,
+            });
+            match client.search(payload).await {
+                Ok(result) => {
+                    this.update(cx, |service, cx| {
+                        service.status_message = "Kairo encoding-aware search completed".to_owned();
+                        cx.notify();
+                    })?;
+                    Ok(result)
+                }
+                Err(error) => {
+                    this.update(cx, |service, cx| service.set_error(&error, cx))?;
+                    Err(error)
+                }
+            }
+        })
+    }
+}
+
+fn is_toolchain_incompatible_code(code: &str) -> bool {
+    code == crate::domain::ErrorCode::TOOLCHAIN_INCOMPATIBLE
+        || code == "toolchain_missing"
+        || code == "unsupported_jdk_target"
 }
 
 /// Initialize the global service. Called once from `kairo_core::init`.

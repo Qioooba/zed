@@ -2,7 +2,7 @@ name = "Java"
 grammar = "java"
 path_suffixes = ["java"]
 line_comments = ["//"]
-block_comment = { start = "/*", prefix = "* ", end = " */" }
+block_comment = { start = "/*", prefix = "* ", end = " */", tab_size = 0 }
 brackets = [
     { start = "{", end = "}", close = true, newline = true },
     { start = "[", end = "]", close = true, newline = true },

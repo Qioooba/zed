@@ -186,6 +186,40 @@ impl KairoClient {
         .await
     }
 
+    /// Apply the Zed-side settings to the registered project. Levels and
+    /// encoding are server-derived on build, so this is the correct seam for
+    /// `source_level` / `target_level` / `encoding`.
+    pub async fn update_project(&self, project_id: &str, project: &serde_json::Value) -> Result<Project> {
+        self.put(
+            &format!("/api/v1/projects/{project_id}"),
+            project,
+        )
+        .await
+    }
+
+    pub async fn validate_encoding(&self, text: &str, encoding: &str) -> Result<serde_json::Value> {
+        self.post(
+            "/api/v1/encoding/validate",
+            &crate::domain::ValidateEncodingRequest {
+                text: text.to_owned(),
+                encoding: encoding.to_owned(),
+            },
+        )
+        .await
+    }
+
+    pub async fn prepare_jdtls(&self, workspace_id: &str) -> Result<serde_json::Value> {
+        self.post(
+            &format!("/api/v1/workspaces/{workspace_id}/java/prepare"),
+            &serde_json::json!({}),
+        )
+        .await
+    }
+
+    pub async fn jdtls_status(&self) -> Result<serde_json::Value> {
+        self.get::<serde_json::Value>("/api/v1/jdtls").await
+    }
+
     pub async fn detect_encoding(&self, file: &str) -> Result<EncodingDetection> {
         self.post(
             "/api/v1/encoding/detect",
@@ -252,6 +286,32 @@ impl KairoClient {
     async fn delete<T: serde::de::DeserializeOwned>(&self, path: &str) -> Result<T> {
         self.request_json(Method::DELETE, path, None::<&serde_json::Value>)
             .await
+    }
+
+    async fn put<T: serde::de::DeserializeOwned, B: serde::Serialize + ?Sized>(
+        &self,
+        path: &str,
+        body: &B,
+    ) -> Result<T> {
+        // The agent routes PUT by path; reuse request_json's POST envelope
+        // path by temporarily building the request directly.
+        let uri = format!("{}{}", self.base_url, path);
+        let payload_value = serde_json::to_value(body)?;
+        let envelope = RequestEnvelope {
+            request_id: new_request_id(),
+            correlation_id: None,
+            workspace_id: self.workspace_id.clone(),
+            project_id: self.project_id.clone(),
+            payload: payload_value,
+        };
+        let request = HttpRequest::builder()
+            .method(Method::PUT)
+            .uri(&uri)
+            .header("Content-Type", "application/json")
+            .header("Accept", "application/json")
+            .body(AsyncBody::from(serde_json::to_string(&envelope)?))
+            .context("invalid Kairo PUT request")?;
+        self.send_and_decode(request).await
     }
 
     async fn request_json<T, B>(

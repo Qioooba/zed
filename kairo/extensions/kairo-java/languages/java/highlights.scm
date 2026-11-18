@@ -7,7 +7,8 @@
 (null_literal) @constant
 (decimal_integer_literal) @number
 (hex_integer_literal) @number
-(floating_point_literal) @number
+(decimal_floating_point_literal) @number
+(hex_floating_point_literal) @number
 (identifier) @variable
 (type_identifier) @type
 (class_declaration name: (identifier) @type)
