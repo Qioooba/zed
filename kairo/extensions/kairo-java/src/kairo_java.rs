@@ -51,9 +51,7 @@ impl zed::Extension for KairoJavaExtension {
                         entries
                             .iter()
                             .filter_map(|(key, value)| {
-                                value
-                                    .as_str()
-                                    .map(|value| (key.clone(), value.to_owned()))
+                                value.as_str().map(|value| (key.clone(), value.to_owned()))
                             })
                             .collect::<Vec<_>>()
                     })
@@ -111,20 +109,24 @@ impl zed::Extension for KairoJavaExtension {
             .ok()
             .and_then(|text| serde_json::from_str::<Value>(&text).ok());
         let debug = descriptor.and_then(|value| value.get("debug").cloned());
-        let jar_path = user_provided_debug_adapter_path.or_else(|| {
-            parsed
-                .get("jarPath")
-                .and_then(Value::as_str)
-                .map(str::to_owned)
-        }).or_else(|| {
-            debug
-                .as_ref()
-                .and_then(|value| value.get("jarPath"))
-                .and_then(Value::as_str)
-                .map(str::to_owned)
-        }).ok_or_else(|| {
-            "Kairo JDI bridge not found: set dap.java.binary or run Kairo: Debug first".to_owned()
-        })?;
+        let jar_path = user_provided_debug_adapter_path
+            .or_else(|| {
+                parsed
+                    .get("jarPath")
+                    .and_then(Value::as_str)
+                    .map(str::to_owned)
+            })
+            .or_else(|| {
+                debug
+                    .as_ref()
+                    .and_then(|value| value.get("jarPath"))
+                    .and_then(Value::as_str)
+                    .map(str::to_owned)
+            })
+            .ok_or_else(|| {
+                "Kairo JDI bridge not found: set dap.java.binary or run Kairo: Debug first"
+                    .to_owned()
+            })?;
         let port = parsed
             .get("port")
             .and_then(Value::as_u64)

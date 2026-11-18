@@ -45,15 +45,9 @@ impl Settings for KairoSettings {
             return defaults;
         };
         Self {
-            agent_path: kairo
-                .agent_path
-                .clone()
-                .unwrap_or(defaults.agent_path),
+            agent_path: kairo.agent_path.clone().unwrap_or(defaults.agent_path),
             data_dir: kairo.data_dir.clone().unwrap_or(defaults.data_dir),
-            bundled_dir: kairo
-                .bundled_dir
-                .clone()
-                .unwrap_or(defaults.bundled_dir),
+            bundled_dir: kairo.bundled_dir.clone().unwrap_or(defaults.bundled_dir),
             language_server_java_home: kairo
                 .language_server_java_home
                 .clone()
@@ -69,13 +63,9 @@ impl Settings for KairoSettings {
             source_level: kairo.source_level.clone().unwrap_or(defaults.source_level),
             target_level: kairo.target_level.clone().unwrap_or(defaults.target_level),
             encoding: kairo.encoding.clone().unwrap_or(defaults.encoding),
-            tomcat_http_port: kairo
-                .tomcat_http_port
-                .unwrap_or(defaults.tomcat_http_port),
+            tomcat_http_port: kairo.tomcat_http_port.unwrap_or(defaults.tomcat_http_port),
             debug_port: kairo.debug_port.unwrap_or(defaults.debug_port),
-            auto_start_agent: kairo
-                .auto_start_agent
-                .unwrap_or(defaults.auto_start_agent),
+            auto_start_agent: kairo.auto_start_agent.unwrap_or(defaults.auto_start_agent),
         }
     }
 }

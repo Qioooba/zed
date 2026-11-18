@@ -2,11 +2,11 @@
 //! paged Tomcat logs. Logs are deliberately bounded — Kairo's UI spec forbids
 //! unbounded log views on the target 4 GB machines.
 
-use gpui::{
-    App, AsyncWindowContext, Context, EventEmitter, FocusHandle, Focusable, SharedString, Subscription,
-    Window, div, prelude::*, px,
-};
 use editor::Editor;
+use gpui::{
+    App, AsyncWindowContext, Context, EventEmitter, FocusHandle, Focusable, SharedString,
+    Subscription, Window, div, prelude::*, px,
+};
 use icons::IconName;
 use kairo_core::{actions, service::KairoService};
 use workspace::{
@@ -241,10 +241,7 @@ impl Render for KairoPanel {
             .gap_2()
             .p_3()
             .child(div().text_sm().child(status))
-            .child(
-                div()
-                    .text_xs()
-                    .child(SharedString::from(format!(
+            .child(div().text_xs().child(SharedString::from(format!(
                         "Encoding: {} | Hot reload: {}",
                         state
                             .encoding()
@@ -255,8 +252,7 @@ impl Render for KairoPanel {
                         } else {
                             state.hot_reload_mode()
                         }
-                    ))),
-            )
+                    ))))
             .when_some(state.last_error().map(SharedString::from), |this, error| {
                 this.child(
                     div()
@@ -314,12 +310,9 @@ impl Render for KairoPanel {
                                 let root = panel
                                     .workspace
                                     .read_with(cx, |workspace, app| {
-                                        workspace
-                                            .visible_worktrees(app)
-                                            .next()
-                                            .map(|tree| {
-                                                tree.read(app).abs_path().to_string_lossy().into_owned()
-                                            })
+                                        workspace.visible_worktrees(app).next().map(|tree| {
+                                            tree.read(app).abs_path().to_string_lossy().into_owned()
+                                        })
                                     })
                                     .ok()
                                     .flatten();
@@ -343,14 +336,16 @@ impl Render for KairoPanel {
                                     .workspace
                                     .read_with(cx, |workspace, app| {
                                         workspace.active_item_as::<Editor>(app).and_then(|editor| {
-                                            editor.read(app).buffer().read(app).as_singleton().and_then(
-                                                |buffer| {
-                                                    buffer
-                                                        .read(app)
-                                                        .file()
-                                                        .and_then(|file| file.file_system_abs_path(app))
-                                                },
-                                            )
+                                            editor
+                                                .read(app)
+                                                .buffer()
+                                                .read(app)
+                                                .as_singleton()
+                                                .and_then(|buffer| {
+                                                    buffer.read(app).file().and_then(|file| {
+                                                        file.file_system_abs_path(app)
+                                                    })
+                                                })
                                         })
                                     })
                                     .ok()
@@ -390,13 +385,17 @@ impl Render for KairoPanel {
                     .child(div().flex_1().child(SharedString::from(format!(
                         "Projects (active marked *)\n{projects}"
                     ))))
-                    .child(div().flex_1().child(SharedString::from(format!(
-                        "Toolchains\n{toolchains}"
-                    ))))
+                    .child(
+                        div()
+                            .flex_1()
+                            .child(SharedString::from(format!("Toolchains\n{toolchains}"))),
+                    )
                     .child(div().flex_1().child(SharedString::from(toolchain_slots)))
-                    .child(div().flex_1().child(SharedString::from(format!(
-                        "Servers\n{servers}"
-                    )))),
+                    .child(
+                        div()
+                            .flex_1()
+                            .child(SharedString::from(format!("Servers\n{servers}"))),
+                    ),
             )
             .child(
                 div()
@@ -408,9 +407,11 @@ impl Render for KairoPanel {
                     ))),
             )
             .when(!detected.is_empty(), |this| {
-                this.child(div().text_xs().child(SharedString::from(format!(
-                    "Detected layouts:\n{detected}"
-                ))))
+                this.child(
+                    div()
+                        .text_xs()
+                        .child(SharedString::from(format!("Detected layouts:\n{detected}"))),
+                )
             })
     }
 }

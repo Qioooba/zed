@@ -64,18 +64,24 @@ pub fn init(cx: &mut App) {
                  _action: &actions::HotDeploy,
                  _window: &mut Window,
                  cx: &mut Context<Workspace>| {
-                    let java_file = workspace
-                        .active_item_as::<Editor>(cx)
-                        .and_then(|editor| {
-                            editor.read(cx).buffer().read(cx).as_singleton().and_then(|buffer| {
-                                buffer
-                                    .read(cx)
-                                    .file()
-                                    .and_then(|file| file.file_system_abs_path(cx))
+                    let java_file =
+                        workspace
+                            .active_item_as::<Editor>(cx)
+                            .and_then(|editor| {
+                                editor.read(cx).buffer().read(cx).as_singleton().and_then(
+                                    |buffer| {
+                                        buffer
+                                            .read(cx)
+                                            .file()
+                                            .and_then(|file| file.file_system_abs_path(cx))
+                                    },
+                                )
                             })
-                        })
-                        .filter(|path| path.extension().is_some_and(|ext| ext.eq_ignore_ascii_case("java")))
-                        .map(|path| path.to_string_lossy().into_owned());
+                            .filter(|path| {
+                                path.extension()
+                                    .is_some_and(|ext| ext.eq_ignore_ascii_case("java"))
+                            })
+                            .map(|path| path.to_string_lossy().into_owned());
                     let service = KairoService::global(cx);
                     service.update(cx, |service, cx| {
                         service.hot_deploy(java_file, cx).detach_and_log_err(cx);
@@ -192,18 +198,28 @@ pub fn init(cx: &mut App) {
                     let Some(editor) = workspace.active_item_as::<Editor>(cx) else {
                         return;
                     };
-                    let path = editor.read(cx).buffer().read(cx).as_singleton().and_then(|buffer| {
-                        buffer
+                    let path =
+                        editor
                             .read(cx)
-                            .file()
-                            .and_then(|file| file.file_system_abs_path(cx))
-                    });
+                            .buffer()
+                            .read(cx)
+                            .as_singleton()
+                            .and_then(|buffer| {
+                                buffer
+                                    .read(cx)
+                                    .file()
+                                    .and_then(|file| file.file_system_abs_path(cx))
+                            });
                     let Some(path) = path else { return };
                     let text = editor.read(cx).text(cx);
                     let service = KairoService::global(cx);
                     service.update(cx, |service, cx| {
                         service
-                            .save_buffer_with_encoding(path.to_string_lossy().into_owned(), text, cx)
+                            .save_buffer_with_encoding(
+                                path.to_string_lossy().into_owned(),
+                                text,
+                                cx,
+                            )
                             .detach_and_log_err(cx);
                     });
                 },

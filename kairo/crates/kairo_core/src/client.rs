@@ -20,7 +20,10 @@ use crate::domain::{
 static NEXT_REQUEST_ID: AtomicU64 = AtomicU64::new(1);
 
 fn new_request_id() -> String {
-    format!("req_kairo_{}", NEXT_REQUEST_ID.fetch_add(1, Ordering::Relaxed))
+    format!(
+        "req_kairo_{}",
+        NEXT_REQUEST_ID.fetch_add(1, Ordering::Relaxed)
+    )
 }
 
 /// A client bound to one running Kairo runtime-agent process.
@@ -34,11 +37,7 @@ pub struct KairoClient {
 }
 
 impl KairoClient {
-    pub fn new(
-        http: Arc<dyn HttpClient>,
-        base_url: String,
-        secret: Option<String>,
-    ) -> Self {
+    pub fn new(http: Arc<dyn HttpClient>, base_url: String, secret: Option<String>) -> Self {
         Self {
             http,
             base_url: base_url.trim_end_matches('/').to_owned(),
@@ -88,7 +87,11 @@ impl KairoClient {
         .await
     }
 
-    pub async fn scan_project(&self, workspace_id: &str, root_path: &str) -> Result<ProjectDetection> {
+    pub async fn scan_project(
+        &self,
+        workspace_id: &str,
+        root_path: &str,
+    ) -> Result<ProjectDetection> {
         self.post(
             &format!("/api/v1/workspaces/{workspace_id}/scan"),
             &serde_json::json!({ "rootPath": root_path }),
@@ -146,11 +149,12 @@ impl KairoClient {
         self.post("/api/v1/servers", request).await
     }
 
-    pub async fn get_servers_for_workspace(&self, workspace_id: &str) -> Result<Vec<ServerResponse>> {
-        self.get::<Vec<ServerResponse>>(&format!(
-            "/api/v1/servers?workspaceId={workspace_id}"
-        ))
-        .await
+    pub async fn get_servers_for_workspace(
+        &self,
+        workspace_id: &str,
+    ) -> Result<Vec<ServerResponse>> {
+        self.get::<Vec<ServerResponse>>(&format!("/api/v1/servers?workspaceId={workspace_id}"))
+            .await
     }
 
     pub async fn server(&self, server_id: &str) -> Result<ServerResponse> {
@@ -188,21 +192,20 @@ impl KairoClient {
     }
 
     pub async fn server_logs(&self, server_id: &str, tail: u32) -> Result<Vec<LogLine>> {
-        self.get::<Vec<LogLine>>(&format!(
-            "/api/v1/servers/{server_id}/logs?tail={tail}"
-        ))
-        .await
+        self.get::<Vec<LogLine>>(&format!("/api/v1/servers/{server_id}/logs?tail={tail}"))
+            .await
     }
 
     /// Apply the Zed-side settings to the registered project. Levels and
     /// encoding are server-derived on build, so this is the correct seam for
     /// `source_level` / `target_level` / `encoding`.
-    pub async fn update_project(&self, project_id: &str, project: &serde_json::Value) -> Result<Project> {
-        self.put(
-            &format!("/api/v1/projects/{project_id}"),
-            project,
-        )
-        .await
+    pub async fn update_project(
+        &self,
+        project_id: &str,
+        project: &serde_json::Value,
+    ) -> Result<Project> {
+        self.put(&format!("/api/v1/projects/{project_id}"), project)
+            .await
     }
 
     pub async fn validate_encoding(&self, text: &str, encoding: &str) -> Result<serde_json::Value> {
@@ -240,14 +243,21 @@ impl KairoClient {
         self.post("/api/v1/encoding/recode", request).await
     }
 
-    pub async fn launch_descriptor(&self, workspace_id: &str, project_id: &str) -> Result<LaunchDescriptor> {
+    pub async fn launch_descriptor(
+        &self,
+        workspace_id: &str,
+        project_id: &str,
+    ) -> Result<LaunchDescriptor> {
         self.get::<LaunchDescriptor>(&format!(
             "/api/v1/workspaces/{workspace_id}/java/launch-descriptor?projectId={project_id}"
         ))
         .await
     }
 
-    pub async fn generate_jdt_project(&self, payload: serde_json::Value) -> Result<serde_json::Value> {
+    pub async fn generate_jdt_project(
+        &self,
+        payload: serde_json::Value,
+    ) -> Result<serde_json::Value> {
         self.post("/api/v1/jdtls/project", &payload).await
     }
 
@@ -284,7 +294,9 @@ impl KairoClient {
 
     /// Subscribe to the agent's event stream. The caller owns the returned
     /// stream and can cancel it by dropping the future/connection.
-    pub async fn subscribe_events(&self) -> Result<impl futures::Stream<Item = Result<KairoEvent>>> {
+    pub async fn subscribe_events(
+        &self,
+    ) -> Result<impl futures::Stream<Item = Result<KairoEvent>>> {
         // The real implementation upgrades `/api/v1/events` to a WebSocket with
         // the `kairo-secret-v1` subprotocol. This is a placeholder stream that
         // reports "not connected" so callers can degrade gracefully until WS
@@ -340,12 +352,7 @@ impl KairoClient {
         self.send_and_decode(request).await
     }
 
-    async fn request_json<T, B>(
-        &self,
-        method: Method,
-        path: &str,
-        body: Option<&B>,
-    ) -> Result<T>
+    async fn request_json<T, B>(&self, method: Method, path: &str, body: Option<&B>) -> Result<T>
     where
         T: serde::de::DeserializeOwned,
         B: serde::Serialize + ?Sized,
@@ -404,8 +411,7 @@ impl KairoClient {
         if !status.is_success() {
             // Even error statuses carry the typed envelope. Try to surface the
             // closed error code rather than a generic HTTP error.
-            if let Ok(envelope) =
-                serde_json::from_slice::<ResponseEnvelope>(&body_bytes)
+            if let Ok(envelope) = serde_json::from_slice::<ResponseEnvelope>(&body_bytes)
                 && let Some(error) = envelope.error
             {
                 bail!(error);
@@ -413,7 +419,10 @@ impl KairoClient {
             bail!(
                 "Kairo agent returned HTTP {} for request: {}",
                 status,
-                String::from_utf8_lossy(&body_bytes).chars().take(500).collect::<String>()
+                String::from_utf8_lossy(&body_bytes)
+                    .chars()
+                    .take(500)
+                    .collect::<String>()
             );
         }
 
@@ -423,8 +432,8 @@ impl KairoClient {
             if let Some(object) = value.as_object()
                 && object.contains_key("ok")
             {
-                let envelope: ResponseEnvelope = serde_json::from_value(value)
-                    .context("invalid Kairo response envelope")?;
+                let envelope: ResponseEnvelope =
+                    serde_json::from_value(value).context("invalid Kairo response envelope")?;
                 if !envelope.ok {
                     if let Some(error) = envelope.error {
                         bail!(error);
