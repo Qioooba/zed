@@ -51,7 +51,8 @@ All 5 parallel agents completed:
 - [x] Task fixture for `legacy-sample`.
 - [ ] Build/verify with `cargo check` — **blocked: no Rust toolchain installed in this environment**.
 - [ ] Validate the WASM extension with `zed-extension` — same blocker.
-- [ ] End-to-end run against `legacy-sample` with real Tomcat 6 (compile → deploy → start → debug → JSP hot reload).
+- [x] End-to-end run against `legacy-sample` with real Tomcat 6 (compile → deploy → start → JSP serving → JSP hot reload) at the **agent/API layer**, with evidence in `VERIFICATION.md`. Debug attach and the Rust UI themselves still need a Rust-enabled machine.
+- [x] Added `scripts/verify.ps1` for the full Rust + WASM + clippy verification pass.
 
 ### Verification constraint
 
