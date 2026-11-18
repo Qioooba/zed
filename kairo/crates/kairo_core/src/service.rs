@@ -16,7 +16,7 @@ use http_client::HttpClient;
 use util::ResultExt as _;
 
 use crate::{
-    agent::{AgentHandle, AgentLaunchConfig, BridgeHandle, spawn_agent, spawn_debug_bridge},
+    agent::{AgentHandle, AgentLaunchConfig, spawn_agent},
     client::{KairoClient, global_http_client},
     domain::{
         BuildRequest, BuildResult, DebugAdapterStatus, DeployRequest, DeployResult,
@@ -45,12 +45,14 @@ pub struct KairoService {
     detected: Vec<DetectedProjectLayout>,
     active_workspace_id: Option<String>,
     active_project_id: Option<String>,
+    worktree_root: Option<String>,
+    jdtls_descriptor: Option<crate::domain::LaunchDescriptor>,
+    jdwp_port: u16,
     status_message: String,
     last_error: Option<String>,
     encoding: Option<EncodingDetection>,
     hot_reload_mode: String,
     debug_gate: Option<DebugAdapterStatus>,
-    bridge: Option<BridgeHandle>,
     pending_deploy: bool,
     build_task: Option<Task<()>>,
     poll_task: Option<Task<()>>,
@@ -72,12 +74,14 @@ impl KairoService {
             detected: Vec::new(),
             active_workspace_id: None,
             active_project_id: None,
+            worktree_root: None,
+            jdtls_descriptor: None,
+            jdwp_port: 8000,
             status_message: "Kairo agent is not running".to_owned(),
             last_error: None,
             encoding: None,
             hot_reload_mode: String::new(),
             debug_gate: None,
-            bridge: None,
             pending_deploy: false,
             build_task: None,
             poll_task: None,
@@ -381,6 +385,7 @@ impl KairoService {
                     service.projects.push(project);
                 }
                 service.active_project_id = Some(project_id.clone());
+                service.worktree_root = Some(root_path.clone());
                 service.last_error = None;
                 service.status_message = format!("Kairo project {project_id} is ready");
                 service.activate_project(project_id, cx);
@@ -495,9 +500,63 @@ impl KairoService {
                 let error = error.context("failed to apply Kairo project settings");
                 this.update(cx, |service, cx| service.set_error(&error, cx))
                     .log_err();
+            } else {
+                let descriptor = client
+                    .launch_descriptor(&workspace_id, &project_id)
+                    .await
+                    .log_err();
+                this.update(cx, |service, cx| {
+                    service.jdtls_descriptor = descriptor;
+                    service.write_descriptor(cx);
+                    cx.notify();
+                })
+                .log_err();
             }
         })
         .detach();
+    }
+
+    /// Write a descriptor into the worktree so the WASM extension (which can
+    /// read worktree files but not host env/FS) can configure JDT LS and the
+    /// stdio JDI bridge automatically.
+    fn write_descriptor(&self, cx: &mut Context<Self>) {
+        let Some(root) = self.worktree_root.clone() else {
+            return;
+        };
+        let dir = PathBuf::from(&root).join(".zed");
+        let path = dir.join("kairo-integration.json");
+        let jar = self
+            .bundled_dir()
+            .map(|dir| {
+                dir.join("kairo-jdi-bridge.jar")
+                    .to_string_lossy()
+                    .into_owned()
+            })
+            .unwrap_or_default();
+        let jdtls = self.jdtls_descriptor.as_ref();
+        let descriptor = serde_json::json!({
+            "schemaVersion": 1,
+            "agentUrl": self.agent_base_url(),
+            "encoding": self.settings.encoding,
+            "jdtls": {
+                "command": jdtls.map(|d| d.command.clone()).unwrap_or_default(),
+                "args": jdtls.map(|d| d.args.clone()).unwrap_or_default(),
+                "env": jdtls.map(|d| d.env_allowlist.clone()).unwrap_or_default(),
+            },
+            "debug": {
+                "jarPath": jar,
+                "host": "127.0.0.1",
+                "jdwpPort": self.jdwp_port,
+            }
+        });
+        cx.spawn(async move |_this, _cx| {
+            smol::fs::create_dir_all(&dir).await?;
+            smol::fs::write(&path, serde_json::to_vec_pretty(&descriptor)?)
+                .await
+                .with_context(|| format!("writing {}", path.display()))?;
+            Ok::<(), anyhow::Error>(())
+        })
+        .detach_and_log_err(cx);
     }
 
     /// Open a workspace and scan it for a legacy project layout.
@@ -506,6 +565,7 @@ impl KairoService {
             return self.unavailable("Kairo runtime agent is not running", cx);
         };
         let root_path = root_path.into();
+        self.worktree_root = Some(root_path.clone());
         cx.spawn(async move |this, cx| {
             match client.open_workspace(&root_path).await {
                 Ok(workspace) => {
@@ -537,6 +597,7 @@ impl KairoService {
         let Ok(client) = self.client() else {
             return self.unavailable("Kairo runtime agent is not running", cx);
         };
+        self.worktree_root = Some(root_path.clone());
         cx.spawn(async move |this, cx| {
             match client.scan_project(&workspace_id, &root_path).await {
                 Ok(detection) => {
@@ -771,8 +832,8 @@ impl KairoService {
         })
     }
 
-    /// Start Tomcat, optionally with JDWP, and launch the JDI bridge so Zed's
-    /// DAP adapter has something to attach to.
+    /// Start Tomcat, optionally with JDWP. The stdio JDI bridge is spawned by
+    /// Zed's DAP adapter using the worktree descriptor.
     pub fn start_server(&mut self, debug: bool, cx: &mut Context<Self>) -> Task<Result<()>> {
         let Ok(client) = self.client() else {
             return self.unavailable("Kairo runtime agent is not running", cx);
@@ -790,8 +851,6 @@ impl KairoService {
             jvm_options: Vec::new(),
         };
         let settings = self.settings.clone();
-        let bundled_dir = self.bundled_dir();
-        let executor = cx.background_executor().clone();
         cx.spawn(async move |this, cx| {
             if debug {
                 let gate = client.debug_adapter_status().await.context(
@@ -815,6 +874,10 @@ impl KairoService {
                     let server_id = server.id.clone();
                     let debug_port = server.ports.debug;
                     this.update(cx, |service, cx| {
+                        if debug && debug_port != 0 {
+                            service.jdwp_port = debug_port;
+                        }
+                        service.write_descriptor(cx);
                         service.servers.push(server.clone());
                         service.debug_gate = debug.then_some(DebugAdapterStatus {
                             available: true,
@@ -828,37 +891,13 @@ impl KairoService {
                         cx.notify();
                     })?;
                     if debug {
-                        let jar = bundled_dir
-                            .as_ref()
-                            .map(|dir| dir.join("kairo-jdi-bridge.jar"))
-                            .unwrap_or_else(|| PathBuf::from("kairo-jdi-bridge.jar"));
-                        let java_home = if settings.tomcat_java_home.is_empty() {
-                            None
-                        } else {
-                            Some(PathBuf::from(&settings.tomcat_java_home))
-                        };
-                        match spawn_debug_bridge(
-                            executor,
-                            java_home,
-                            jar,
-                            "127.0.0.1",
-                            if debug_port == 0 { settings.debug_port } else { debug_port },
-                        )
-                        .await
-                        {
-                            Ok(bridge) => {
-                                this.update(cx, |service, cx| {
-                                    service.bridge = Some(bridge);
-                                    service.status_message =
-                                        "JDWP bridge is listening; attach the Zed debug session".to_owned();
-                                    cx.notify();
-                                })?;
-                            }
-                            Err(error) => {
-                                this.update(cx, |service, cx| service.set_error(&error, cx))?;
-                                return Err(error);
-                            }
-                        }
+                        this.update(cx, |service, cx| {
+                            service.status_message = format!(
+                                "JDWP is listening on 127.0.0.1:{}; start the Zed Java debug session",
+                                if service.jdwp_port == 0 { settings.debug_port } else { service.jdwp_port }
+                            );
+                            cx.notify();
+                        })?;
                     }
                     Ok(())
                 }
@@ -885,7 +924,6 @@ impl KairoService {
                         {
                             *existing = server.clone();
                         }
-                        service.bridge = None;
                         service.poll_task = None;
                         service.hot_reload_mode.clear();
                         service.status_message = format!("Server {} is {}", server.id, server.state);

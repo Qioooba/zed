@@ -81,51 +81,6 @@ impl AgentHandle {
     }
 }
 
-/// A running `kairo-jdi-bridge.jar` process: DAP over loopback TCP ↔ JDWP.
-pub struct BridgeHandle {
-    child: util::process::Child,
-    port: u16,
-}
-
-impl BridgeHandle {
-    pub fn port(&self) -> u16 {
-        self.port
-    }
-}
-
-/// Launch the JDI bridge that Zed's DAP adapter attaches to. The bridge has its
-/// own bounded JDWP attach retry, so we only need to wait for its TCP listener.
-pub async fn spawn_debug_bridge(
-    executor: BackgroundExecutor,
-    java_home: Option<std::path::PathBuf>,
-    jar_path: std::path::PathBuf,
-    host: &str,
-    port: u16,
-) -> Result<BridgeHandle> {
-    if !jar_path.exists() {
-        bail!("Kairo JDI bridge not found at {}", jar_path.display());
-    }
-    let java_binary = java_home
-        .map(|home| home.join("bin").join("java"))
-        .unwrap_or_else(|| std::path::PathBuf::from("java"));
-    let mut command = util::command::new_std_command(java_binary);
-    command.arg("-jar").arg(&jar_path).arg(host).arg(port.to_string());
-
-    let child = util::process::Child::spawn(command, Stdio::null(), Stdio::piped(), Stdio::piped())
-        .context("failed to start the Kairo JDI bridge")?;
-
-    let deadline = std::time::Instant::now() + Duration::from_secs(20);
-    loop {
-        if smol::net::TcpStream::connect((host, port)).await.is_ok() {
-            return Ok(BridgeHandle { child, port });
-        }
-        if std::time::Instant::now() >= deadline {
-            bail!("Kairo JDI bridge did not open its DAP port {port}");
-        }
-        executor.timer(Duration::from_millis(200)).await;
-    }
-}
-
 /// Start the agent and wait until it reports `status: "ready"`.
 pub async fn spawn_agent(
     executor: BackgroundExecutor,
