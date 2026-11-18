@@ -36,7 +36,7 @@ pub struct KairoService {
     active_project_id: Option<String>,
     status_message: String,
     last_error: Option<String>,
-    agent_watch: Option<Task<()>>,
+    poll_task: Option<Task<()>>,
 }
 
 impl KairoService {
@@ -56,7 +56,7 @@ impl KairoService {
             active_project_id: None,
             status_message: "Kairo agent is not running".to_owned(),
             last_error: None,
-            agent_watch: None,
+            poll_task: None,
         }
     }
 
@@ -302,13 +302,42 @@ impl KairoService {
                 request.configuration = Some(format!("debugPort={debug_port}"));
             }
             let server = client.start_server(&request).await?;
+            let server_id = server.id.clone();
             this.update(cx, |service, cx| {
                 service.servers.push(server.clone());
                 service.status_message = format!("Server {} is {}", server.id, server.state);
+                service.start_log_polling(server_id, cx);
                 cx.notify();
             })?;
             Ok(())
         })
+    }
+
+    /// Poll the agent's bounded log tail so the panel stays live even before
+    /// the WebSocket event stream is wired up. The task is held in a field, so
+    /// it is cancelled when the service is dropped (no detached work).
+    pub fn start_log_polling(&mut self, server_id: String, cx: &mut Context<Self>) {
+        let executor = cx.background_executor().clone();
+        self.poll_task = Some(cx.spawn(async move |this, cx| {
+            loop {
+                executor.timer(std::time::Duration::from_secs(2)).await;
+                let Some(client) = this.read(cx).client.clone() else {
+                    return;
+                };
+                let Ok(logs) = client.server_logs(&server_id, 200).await else {
+                    return;
+                };
+                if this
+                    .update(cx, |service, cx| {
+                        service.logs = logs;
+                        cx.notify();
+                    })
+                    .is_err()
+                {
+                    return;
+                }
+            }
+        }));
     }
 
     pub fn stop_server(&mut self, server_id: String, cx: &mut Context<Self>) -> Task<Result<()>> {
