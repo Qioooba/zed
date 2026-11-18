@@ -1,0 +1,25 @@
+[package]
+name = "kairo_core"
+version = "0.1.0"
+edition.workspace = true
+publish.workspace = true
+license = "GPL-3.0-or-later"
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/kairo_core.rs"
+doctest = false
+
+[dependencies]
+anyhow.workspace = true
+client.workspace = true
+dirs.workspace = true
+futures.workspace = true
+gpui.workspace = true
+http_client.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+settings.workspace = true
+util.workspace = true

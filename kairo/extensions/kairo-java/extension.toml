@@ -1,0 +1,33 @@
+id = "kairo-java"
+name = "Kairo Java / JSP (legacy JDK 6)"
+description = "Java and JSP language support, JDT LS attachment, and JDWP debugging for legacy Java Web projects."
+version = "0.1.0"
+schema_version = 1
+authors = ["Kairo Integration"]
+repository = "https://github.com/zed-industries/zed"
+
+[grammars.java]
+repository = "https://github.com/tree-sitter/tree-sitter-java"
+commit = "e10607b45ff745f5f876bfa3e94fbcc6b44bdc11"
+
+[grammars.jsp]
+repository = "https://github.com/merico-ai/tree-sitter-jsp"
+commit = "e02ba40fefd64776b56e0d19d7771e6aadab3ec4"
+
+[language_servers.jdtls]
+name = "Eclipse JDT Language Server"
+languages = ["Java", "JSP"]
+
+[language_servers.jdtls.language_ids]
+"Java" = "java"
+"JSP" = "jsp"
+
+[debug_adapters.java]
+schema_path = "debug_adapter_schemas/java.json"
+
+# Probing for a local toolchain is useful; heavy processes are owned by the
+# Go runtime agent in kairo_core, not by this extension.
+[[capabilities]]
+kind = "process:exec"
+command = "java"
+args = ["-version"]

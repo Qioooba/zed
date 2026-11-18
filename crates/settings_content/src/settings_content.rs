@@ -198,6 +198,10 @@ pub struct SettingsContent {
 
     pub call_hierarchy: Option<CallHierarchySettingsContent>,
 
+    /// Kairo integration settings for legacy JDK 6 / Tomcat 6 / JSP projects.
+    // kairo: integration
+    pub kairo: Option<KairoSettingsContent>,
+
     pub git_panel: Option<GitPanelSettingsContent>,
     pub git_graph: Option<GitGraphSettingsContent>,
 
@@ -1088,6 +1092,37 @@ pub struct CallHierarchySettingsContent {
     ///
     /// Default: medium
     pub modal_max_width: Option<ModalWidthContent>,
+}
+
+/// Settings for the Kairo legacy Java Web integration.
+// kairo: integration
+#[with_fallible_options]
+#[derive(Clone, Default, Serialize, Deserialize, JsonSchema, MergeFrom, Debug, PartialEq)]
+pub struct KairoSettingsContent {
+    /// Path to the Kairo runtime-agent executable (`kairo-runtime`).
+    pub agent_path: Option<String>,
+    /// Directory where the agent keeps state (including `agent-state.json`).
+    pub data_dir: Option<String>,
+    /// Directory containing bundled Tomcat 6, JDT LS, and `kairo-jdi-bridge.jar`.
+    pub bundled_dir: Option<String>,
+    /// JRE/JDK used to run the JDT language server (must be a modern JDK, e.g. 21).
+    pub language_server_java_home: Option<String>,
+    /// JDK used to compile project sources (a real JDK 6 is required for `source=1.6`).
+    pub compiler_java_home: Option<String>,
+    /// JDK/JRE used to run Tomcat 6.
+    pub tomcat_java_home: Option<String>,
+    /// Java source level, for example `1.6`.
+    pub source_level: Option<String>,
+    /// Java bytecode target level, for example `1.6`.
+    pub target_level: Option<String>,
+    /// Fallback encoding for files with no BOM or declaration, for example `gbk`.
+    pub encoding: Option<String>,
+    /// Preferred Tomcat HTTP port (`0` lets the agent allocate one).
+    pub tomcat_http_port: Option<u16>,
+    /// JDWP port used when starting Tomcat in debug mode.
+    pub debug_port: Option<u16>,
+    /// Start the agent automatically when a Kairo project is opened.
+    pub auto_start_agent: Option<bool>,
 }
 
 #[with_fallible_options]

@@ -1,0 +1,30 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Kairo Java (JDWP) debug configuration",
+  "type": "object",
+  "properties": {
+    "request": {
+      "type": "string",
+      "enum": ["attach"],
+      "default": "attach"
+    },
+    "type": {
+      "type": "string",
+      "const": "java"
+    },
+    "hostName": {
+      "type": "string",
+      "description": "Loopback host of the JDWP port published by the Kairo Tomcat instance.",
+      "default": "127.0.0.1"
+    },
+    "port": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 65535,
+      "description": "JDWP port (Kairo default: 8000).",
+      "default": 8000
+    }
+  },
+  "required": ["request", "port"],
+  "additionalProperties": true
+}
