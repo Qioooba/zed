@@ -2,8 +2,8 @@
 //! derive's inventory mechanism; keybindings are bound at runtime so no
 //! upstream keymap file has to be edited.
 //!
-//! Default chords were chosen from combinations that do not appear in Zed's
-//! shipped keymaps (the previously used `ctrl-alt-b/d/s/p` all collided).
+//! Default chords were checked against the three shipped keymaps; the earlier
+//! `ctrl-alt-b/d/s/p/i/o` choices collided and were replaced.
 
 use gpui::{App, KeyBinding, actions};
 
@@ -38,8 +38,6 @@ actions!(
         SelectProject,
         /// Save the active GBK/legacy file with byte-faithful encoding.
         SaveWithEncoding,
-        /// Run an encoding-aware search (required for GBK projects).
-        SearchEncoded,
         /// Show or hide the Kairo control panel.
         TogglePanel,
         /// Refresh toolchain/server/build status from the agent.
@@ -53,9 +51,9 @@ pub fn bind_keys(cx: &mut App) {
     cx.bind_keys([
         KeyBinding::new("ctrl-alt-shift-j", Compile, None),
         KeyBinding::new("ctrl-alt-shift-m", Deploy, None),
-        KeyBinding::new("ctrl-alt-shift-i", HotDeploy, None),
+        KeyBinding::new("ctrl-alt-shift-u", HotDeploy, None),
         KeyBinding::new("ctrl-alt-shift-v", StartServer, None),
-        KeyBinding::new("ctrl-alt-shift-o", StartDebugServer, None),
+        KeyBinding::new("ctrl-alt-shift-y", StartDebugServer, None),
         KeyBinding::new("ctrl-alt-shift-k", TogglePanel, None),
     ]);
 }

@@ -116,6 +116,14 @@ impl KairoClient {
         self.get::<Vec<Toolchain>>("/api/v1/toolchains").await
     }
 
+    pub async fn import_toolchain(&self, path: &str, label: &str) -> Result<Toolchain> {
+        self.post(
+            "/api/v1/toolchains/import",
+            &serde_json::json!({ "path": path, "label": label }),
+        )
+        .await
+    }
+
     pub async fn start_build(&self, request: &BuildRequest) -> Result<BuildResult> {
         self.post("/api/v1/builds", request).await
     }

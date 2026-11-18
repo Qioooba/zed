@@ -60,13 +60,25 @@ pub fn init(cx: &mut App) {
                 },
             );
             workspace.register_action(
-                |_workspace: &mut Workspace,
+                |workspace: &mut Workspace,
                  _action: &actions::HotDeploy,
                  _window: &mut Window,
                  cx: &mut Context<Workspace>| {
+                    let java_file = workspace
+                        .active_item_as::<Editor>(cx)
+                        .and_then(|editor| {
+                            editor.read(cx).buffer().read(cx).as_singleton().and_then(|buffer| {
+                                buffer
+                                    .read(cx)
+                                    .file()
+                                    .and_then(|file| file.file_system_abs_path(cx))
+                            })
+                        })
+                        .filter(|path| path.extension().is_some_and(|ext| ext.eq_ignore_ascii_case("java")))
+                        .map(|path| path.to_string_lossy().into_owned());
                     let service = KairoService::global(cx);
                     service.update(cx, |service, cx| {
-                        service.hot_deploy(None, cx).detach_and_log_err(cx);
+                        service.hot_deploy(java_file, cx).detach_and_log_err(cx);
                     });
                 },
             );
@@ -150,16 +162,16 @@ pub fn init(cx: &mut App) {
                  _action: &actions::ScanProject,
                  _window: &mut Window,
                  cx: &mut Context<Workspace>| {
-                    let root = workspace
+                    let Some(root) = workspace
                         .visible_worktrees(cx)
                         .next()
-                        .map(|tree| tree.read(cx).abs_path().to_string_lossy().into_owned());
+                        .map(|tree| tree.read(cx).abs_path().to_string_lossy().into_owned())
+                    else {
+                        return;
+                    };
                     let service = KairoService::global(cx);
                     service.update(cx, |service, cx| {
-                        service.start_agent(cx).detach_and_log_err(cx);
-                        if let Some(root) = root {
-                            service.open_workspace(root, cx).detach_and_log_err(cx);
-                        }
+                        service.bootstrap(root, cx).detach_and_log_err(cx);
                     });
                 },
             );
@@ -169,9 +181,7 @@ pub fn init(cx: &mut App) {
                  _window: &mut Window,
                  cx: &mut Context<Workspace>| {
                     let service = KairoService::global(cx);
-                    service.update(cx, |service, cx| {
-                        service.refresh(cx).detach_and_log_err(cx);
-                    });
+                    service.update(cx, |service, cx| service.select_next_project(cx));
                 },
             );
             workspace.register_action(
@@ -199,19 +209,6 @@ pub fn init(cx: &mut App) {
             );
             workspace.register_action(
                 |_workspace: &mut Workspace,
-                 _action: &actions::SearchEncoded,
-                 _window: &mut Window,
-                 cx: &mut Context<Workspace>| {
-                    // The panel owns the query string; this action refreshes the
-                    // status surface so the user can see the last search result.
-                    let service = KairoService::global(cx);
-                    service.update(cx, |service, cx| {
-                        service.refresh(cx).detach_and_log_err(cx);
-                    });
-                },
-            );
-            workspace.register_action(
-                |_workspace: &mut Workspace,
                  _action: &actions::RefreshStatus,
                  _window: &mut Window,
                  cx: &mut Context<Workspace>| {
@@ -228,7 +225,7 @@ pub fn init(cx: &mut App) {
                  cx: &mut Context<Workspace>| {
                     let service = KairoService::global(cx);
                     service.update(cx, |service, cx| {
-                        service.refresh(cx).detach_and_log_err(cx);
+                        service.reconnect_agent(cx).detach_and_log_err(cx);
                     });
                 },
             );

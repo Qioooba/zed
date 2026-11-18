@@ -17,9 +17,9 @@ Zed 侧只增加一个停靠面板 **Kairo**（默认底部，可拖到右侧）
 |------|------|------|
 | Compile | `Ctrl+Alt+Shift+J` | 单独编译 |
 | Deploy | `Ctrl+Alt+Shift+M` | 部署最近一次成功构建 |
-| Hot Deploy | `Ctrl+Alt+Shift+I` | 按文件类型决定静态同步或增量编译 |
+| Hot Deploy | `Ctrl+Alt+Shift+U` | 按文件类型决定静态同步或增量编译 |
 | Start Server | `Ctrl+Alt+Shift+V` | 启动真实 Tomcat 6 |
-| Debug | `Ctrl+Alt+Shift+O` | 先过 Java 6 闸门，再起桥并附加 |
+| Debug | `Ctrl+Alt+Shift+Y` | 先过 Java 6 闸门，再起桥并附加 |
 | 面板开关 | `Ctrl+Alt+Shift+K` | 显示/隐藏 Kairo 面板 |
 
 用户可在 Zed 键位文件中自由重绑定；Kairo 不修改上游 keymap 文件。

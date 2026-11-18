@@ -6,6 +6,7 @@ use gpui::{
     App, AsyncWindowContext, Context, EventEmitter, FocusHandle, Focusable, SharedString, Subscription,
     Task, Window, div, prelude::*, px,
 };
+use editor::Editor;
 use icons::IconName;
 use kairo_core::{actions, service::KairoService};
 use workspace::{
@@ -284,6 +285,79 @@ impl Render for KairoPanel {
                             service.stop_server(server_id, cx).detach_and_log_err(cx);
                         }
                     }))
+                    .child(self.action_button("Select Project", cx, |service, cx| {
+                        service.select_next_project(cx);
+                    }))
+                    .child(self.action_button("Open App", cx, |service, cx| {
+                        if let Some(url) = service.application_url() {
+                            cx.open_url(&url);
+                        }
+                    }))
+                    .child(
+                        div()
+                            .id("kairo-scan-button")
+                            .px_2()
+                            .py_1()
+                            .rounded_md()
+                            .border_1()
+                            .on_click(cx.listener(|panel, _event, _window, cx| {
+                                let root = panel
+                                    .workspace
+                                    .read_with(cx, |workspace, app| {
+                                        workspace
+                                            .visible_worktrees(app)
+                                            .next()
+                                            .map(|tree| {
+                                                tree.read(app).abs_path().to_string_lossy().into_owned()
+                                            })
+                                    })
+                                    .ok()
+                                    .flatten();
+                                let Some(root) = root else { return };
+                                let service = KairoService::global(cx);
+                                service.update(cx, |service, cx| {
+                                    service.bootstrap(root, cx).detach_and_log_err(cx);
+                                });
+                            }))
+                            .child("Scan Project"),
+                    )
+                    .child(
+                        div()
+                            .id("kairo-save-encoding-button")
+                            .px_2()
+                            .py_1()
+                            .rounded_md()
+                            .border_1()
+                            .on_click(cx.listener(|panel, _event, _window, cx| {
+                                let path = panel
+                                    .workspace
+                                    .read_with(cx, |workspace, app| {
+                                        workspace.active_item_as::<Editor>(app).and_then(|editor| {
+                                            editor.read(app).buffer().read(app).as_singleton().and_then(
+                                                |buffer| {
+                                                    buffer
+                                                        .read(app)
+                                                        .file()
+                                                        .and_then(|file| file.file_system_abs_path(app))
+                                                },
+                                            )
+                                        })
+                                    })
+                                    .ok()
+                                    .flatten();
+                                let Some(path) = path else { return };
+                                let service = KairoService::global(cx);
+                                service.update(cx, |service, cx| {
+                                    service
+                                        .save_active_file_with_encoding(
+                                            path.to_string_lossy().into_owned(),
+                                            cx,
+                                        )
+                                        .detach_and_log_err(cx);
+                                });
+                            }))
+                            .child("Save with Encoding"),
+                    )
                     .child(self.action_button("Refresh", cx, |service, cx| {
                         service.refresh(cx).detach_and_log_err(cx);
                     })),
@@ -304,9 +378,13 @@ impl Render for KairoPanel {
                     )))),
             )
             .child(
-                div().flex_1().child(SharedString::from(format!(
-                    "Tomcat logs (last {MAX_VISIBLE_LOG_LINES})\n{logs}"
-                ))),
+                div()
+                    .flex_1()
+                    .overflow_y_scroll()
+                    .font_monospace()
+                    .child(SharedString::from(format!(
+                        "Tomcat logs (last {MAX_VISIBLE_LOG_LINES})\n{logs}"
+                    ))),
             )
             .when(!detected.is_empty(), |this| {
                 this.child(div().text_xs().child(SharedString::from(format!(
