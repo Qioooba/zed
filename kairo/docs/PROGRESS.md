@@ -63,6 +63,34 @@ cargo check -p kairo_core -p kairo_ui -p zed
 cargo build -p kairo_java --target wasm32-wasip2
 ```
 
+## Phase 4 — Multi-agent review & fixes ✅
+
+Round 1 (5 parallel agents) → `docs/review/01`–`05`:
+- 6 guaranteed compile blockers + 4 warnings → all fixed (`3009412`).
+- 2 extension blockers (Java `block_comment.tab_size`, `floating_point_literal`) → fixed.
+- Sync doc inaccuracies → fixed.
+- Completeness: 2% strict coverage → driven to ~71% conditional by wiring.
+
+Round 2 (3 parallel agents) → `docs/review/06`–`08`:
+- `06` verdict: **COMPILES-LIKELY, 0 blockers**.
+- `07`: found fresh-user bootstrap race + no project import → fixed with `KairoService::bootstrap()` (`f43a73e`).
+- `08`: UX findings → all 9 items fixed or recorded (`09-ui-screenshot-review.md`).
+
+1080p UI screenshot review (`docs/review/09` + two PNGs) → 9 issues found and fixed.
+
+Real-machine verification:
+- Real Zulu JDK 6 compiled `source/target=1.6` → class major=50.
+- Real Tomcat 6 served JSP 200; hot edit visible without restart.
+- Chinese/space-containing path workspace + scan works.
+
+### Remaining honest gaps (not fully implemented)
+
+1. **Rust compile proof** — no `cargo`/`rustc` on this machine; static review says likely compiles, but unverified.
+2. **Automatic Ctrl+S GBK interception** — Zed has no will-save hook; explicit `SaveWithEncoding` command exists (operates on on-disk bytes; does not yet write the edited buffer's text).
+3. **JDT LS automatic launch** — launch descriptor cannot be handed to the WASM extension via host env; user must configure `lsp.jdtls.binary`.
+4. **WebSocket event stream** — log polling is implemented; `event.gap`/`snapshot.required` not consumed.
+5. **Secondary Kairo features** — SVN, Oracle SQL console, Maven view, i18n, themes, JUnit tree, JSP scriptlet/EL/TLD completion remain planned (P2/P3, see `FEATURE-MATRIX.md`).
+
 ## Decisions log
 
 | Date | Decision | Rationale |
