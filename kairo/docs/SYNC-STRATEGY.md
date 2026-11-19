@@ -21,6 +21,8 @@ step with the Zed authors.
 | `Cargo.lock` | upstream (generated) | medium | **Pending:** the three new workspace members are not in `Cargo.lock` yet because this machine has no Rust toolchain. The first `cargo` run on a Rust machine must commit the regenerated lockfile in a separate commit before any rebase. |
 | `crates/settings_content/src/settings_content.rs` | upstream | medium | 3 tagged insertions: the `kairo` field on `SettingsContent`, the `KairoSettingsContent` struct, and `kairo` in the `flattened_deserialize!` options list. No `default.json` edit. |
 | `crates/settings/src/vscode_import.rs` | upstream | low | 1 tagged line: `kairo: None` in the `SettingsContent` literal used by VS Code settings import. |
+| `crates/project/Cargo.toml` | upstream | low | 1 tagged dependency: `kairo_core.workspace = true`. |
+| `crates/project/src/project.rs` | upstream | medium | Tagged `save_buffer` wrapper that delegates to `kairo_core::save_hook::after_save` for byte-faithful GBK saves. |
 | `crates/zed/Cargo.toml` | upstream | medium | 2 dependency lines, tagged. |
 | `crates/zed/src/main.rs` | upstream | high | 2 init lines next to `terminal_view::init(cx)`, tagged `// kairo: integration`. |
 | `crates/zed/src/zed.rs` | upstream | high | 3 tagged lines: import in rustfmt order, panel `load` call, and the `add_panel_when_ready` arm. |

@@ -3546,8 +3546,15 @@ impl Project {
     }
 
     pub fn save_buffer(&self, buffer: Entity<Buffer>, cx: &mut Context<Self>) -> Task<Result<()>> {
-        self.buffer_store
-            .update(cx, |buffer_store, cx| buffer_store.save_buffer(buffer, cx))
+        // kairo: integration — preserve GBK bytes after Zed writes UTF-8.
+        let kairo_path = buffer
+            .read(cx)
+            .file()
+            .and_then(|file| file.file_system_abs_path(cx));
+        let save = self
+            .buffer_store
+            .update(cx, |buffer_store, cx| buffer_store.save_buffer(buffer, cx));
+        kairo_core::save_hook::after_save(save, kairo_path, cx)
     }
 
     pub fn save_buffer_as(

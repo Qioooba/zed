@@ -17,7 +17,8 @@
 - Zed GUI 在本机 GPU 环境下后续帧渲染变空白，无法完成全部按钮的鼠标点击回归；命令注册已在真实客户端确认。
 - `zed-extension` CLI 在 Windows `\\?\` 长路径下无法克隆 grammar（工具链限制），清单解析已通过，WASM 编译已通过。
 - agent 的 `/jvm/compile*` 在 Windows 存在路径策略缺陷；Zed 侧已改用真实完整构建并如实标注 `restart_required`。
-- 普通 Ctrl+S 的 GBK 拦截需要 Zed 上游 will-save 钩子；当前提供显式 `SaveWithEncoding` 命令。
+- ~~普通 Ctrl+S 的 GBK 拦截需要 Zed 上游 will-save 钩子；当前提供显式 `SaveWithEncoding` 命令。~~ **已完成**：在 `Project::save_buffer` 增加带标记的 `after_save` 钩子，Zed 写 UTF-8 后立即通过 agent 严格重编码磁盘文件为 GBK（已真实编译通过）。
+- WebSocket 事件流客户端已实现（含 `workspaceId` 订阅、sequence gap 检测、断线重连），编译通过；真实 agent 握手成功，但本测试场景 agent 未发布事件，故事件内容验证为 inconclusive。
 
 ## 原始清单（历史记录，以下各项均已有代码入口）
 

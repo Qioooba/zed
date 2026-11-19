@@ -7,6 +7,7 @@
 use std::{path::PathBuf, sync::Arc, time::Duration};
 
 use anyhow::{Context as _, Result, anyhow};
+use futures::StreamExt as _;
 use gpui::{App, AppContext as _, Context, Entity, Global, Task, TaskExt as _};
 use http_client::HttpClient;
 use util::ResultExt as _;
@@ -53,6 +54,9 @@ pub struct KairoService {
     pending_deploy: bool,
     build_task: Option<Task<()>>,
     poll_task: Option<Task<()>>,
+    event_task: Option<Task<()>>,
+    events: Vec<crate::events::KairoEvent>,
+    event_gap_count: u32,
 }
 
 impl KairoService {
@@ -83,6 +87,9 @@ impl KairoService {
             pending_deploy: false,
             build_task: None,
             poll_task: None,
+            event_task: None,
+            events: Vec::new(),
+            event_gap_count: 0,
         }
     }
 
@@ -114,6 +121,14 @@ impl KairoService {
 
     pub fn last_result(&self) -> Option<&serde_json::Value> {
         self.last_result.as_ref()
+    }
+
+    pub fn events(&self) -> &[crate::events::KairoEvent] {
+        &self.events
+    }
+
+    pub fn event_gap_count(&self) -> u32 {
+        self.event_gap_count
     }
 
     pub fn workspaces(&self) -> &[WorkspaceRecord] {
@@ -266,12 +281,14 @@ impl KairoService {
             this.update(cx, |service, cx| {
                 service.agent = Some(agent);
                 service.client = Some(client);
+                crate::save_hook::configure(base_url.clone(), service.settings.encoding.clone());
                 service.status_message = format!("Kairo agent connected at {base_url}");
                 service.last_error = None;
                 cx.notify();
             })?;
             this.update(cx, |service, cx| {
                 service.refresh(cx).detach_and_log_err(cx);
+                service.start_event_stream(cx);
             })?;
             Ok(())
         })
@@ -332,6 +349,10 @@ impl KairoService {
                     this.update(cx, |service, cx| {
                         service.agent = Some(agent);
                         service.client = Some(client.clone());
+                        crate::save_hook::configure(
+                            base_url.clone(),
+                            service.settings.encoding.clone(),
+                        );
                         service.status_message = format!("Kairo agent connected at {base_url}");
                         cx.notify();
                     })?;
@@ -399,6 +420,7 @@ impl KairoService {
                 service.last_error = None;
                 service.status_message = format!("Kairo project {project_id} is ready");
                 service.activate_project(project_id, cx);
+                service.start_event_stream(cx);
                 cx.notify();
             })?;
             Ok(())
@@ -430,6 +452,50 @@ impl KairoService {
         self.client = None;
         self.agent = None;
         self.start_agent(cx)
+    }
+
+    /// Subscribe to `/api/v1/events` over WebSocket and detect sequence gaps.
+    pub fn start_event_stream(&mut self, cx: &mut Context<Self>) {
+        let Some(base_url) = self.agent_base_url() else {
+            return;
+        };
+        let workspace_id = self.active_workspace_id.clone().unwrap_or_default();
+        let secret = std::env::var("KAIRO_LOCAL_SECRET")
+            .ok()
+            .filter(|value| !value.is_empty());
+        self.event_task = Some(cx.spawn(async move |this, cx| {
+            let mut tracker = crate::events::EventTracker::default();
+            loop {
+                match crate::events::connect(&base_url, secret.as_deref(), &workspace_id).await {
+                    Ok(mut stream) => {
+                        while let Some(Ok(message)) = stream.next().await {
+                            let Ok(text) = message.into_text() else { continue };
+                            let Ok(event) = serde_json::from_str::<crate::events::KairoEvent>(&text)
+                            else {
+                                continue;
+                            };
+                            let gap = tracker.ingest(event);
+                            this.update(cx, |service, cx| {
+                                service.events = tracker.events.clone();
+                                if gap {
+                                    service.event_gap_count += 1;
+                                    service.last_error = Some(
+                                        "event.gap: event stream sequence gap detected; snapshot.required"
+                                            .to_owned(),
+                                    );
+                                }
+                                cx.notify();
+                            })
+                            .log_err();
+                        }
+                    }
+                    Err(error) => log::warn!("Kairo event stream disconnected: {error:#}"),
+                }
+                cx.background_executor()
+                    .timer(Duration::from_secs(2))
+                    .await;
+            }
+        }));
     }
 
     /// Refresh catalogs. With exactly one project it becomes the active one —
