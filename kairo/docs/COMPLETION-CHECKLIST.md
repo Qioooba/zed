@@ -18,7 +18,8 @@
 - `zed-extension` CLI 在 Windows `\\?\` 长路径下无法克隆 grammar（工具链限制），清单解析已通过，WASM 编译已通过。
 - agent 的 `/jvm/compile*` 在 Windows 存在路径策略缺陷；Zed 侧已改用真实完整构建并如实标注 `restart_required`。
 - ~~普通 Ctrl+S 的 GBK 拦截需要 Zed 上游 will-save 钩子；当前提供显式 `SaveWithEncoding` 命令。~~ **已完成**：在 `Project::save_buffer` 增加带标记的 `after_save` 钩子，Zed 写 UTF-8 后立即通过 agent 严格重编码磁盘文件为 GBK（已真实编译通过）。
-- WebSocket 事件流客户端已实现（含 `workspaceId` 订阅、sequence gap 检测、断线重连），编译通过；真实 agent 握手成功，但本测试场景 agent 未发布事件，故事件内容验证为 inconclusive。
+- WebSocket 事件流客户端已实现（含 `workspaceId` 订阅、sequence gap 检测、断线重连），编译通过；真实 agent 握手成功。agent 生产 HTTP 路径不发布业务事件（事件发布在未装配的 usecase 层，见 `review/14`），属上游限制，Zed 侧已就绪。
+- GUI 逐按钮点击回归受本机 IME/前台焦点/GPU 限制无法稳定完成，但通过真实二进制 `--dump-all-actions` 验证了 **49 个 Kairo 动作**全部注册进编译后的 `zed.exe`（`review/13`）。
 
 ## 原始清单（历史记录，以下各项均已有代码入口）
 
