@@ -1124,6 +1124,8 @@ pub struct KairoSettingsContent {
     pub debug_port: Option<u16>,
     /// Start the agent automatically when a Kairo project is opened.
     pub auto_start_agent: Option<bool>,
+    /// Language used for Kairo panel and status strings (`en` or `zh-CN`).
+    pub language: Option<String>,
 }
 
 #[with_fallible_options]

@@ -17,6 +17,7 @@ pub struct KairoSettings {
     pub tomcat_http_port: u16,
     pub debug_port: u16,
     pub auto_start_agent: bool,
+    pub language: String,
 }
 
 impl Default for KairoSettings {
@@ -34,6 +35,7 @@ impl Default for KairoSettings {
             tomcat_http_port: 0,
             debug_port: 8000,
             auto_start_agent: true,
+            language: "en".to_owned(),
         }
     }
 }
@@ -66,6 +68,7 @@ impl Settings for KairoSettings {
             tomcat_http_port: kairo.tomcat_http_port.unwrap_or(defaults.tomcat_http_port),
             debug_port: kairo.debug_port.unwrap_or(defaults.debug_port),
             auto_start_agent: kairo.auto_start_agent.unwrap_or(defaults.auto_start_agent),
+            language: kairo.language.clone().unwrap_or(defaults.language),
         }
     }
 }

@@ -8,7 +8,7 @@ use gpui::{
     Subscription, Window, div, prelude::*, px,
 };
 use icons::IconName;
-use kairo_core::{actions, service::KairoService};
+use kairo_core::{actions, i18n, service::KairoService};
 use workspace::{
     Workspace,
     dock::{DockPosition, Panel, PanelEvent},
@@ -142,8 +142,8 @@ impl Panel for KairoPanel {
         Some(IconName::TerminalAlt)
     }
 
-    fn icon_tooltip(&self, _window: &Window, _cx: &App) -> Option<&'static str> {
-        Some("Kairo: legacy Java Web tools")
+    fn icon_tooltip(&self, _window: &Window, cx: &App) -> Option<&'static str> {
+        Some(i18n::strings(cx).icon_tooltip)
     }
 
     fn toggle_action(&self) -> Box<dyn gpui::Action> {
@@ -163,6 +163,7 @@ impl Render for KairoPanel {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let service = KairoService::global(cx);
         let state = service.read(cx);
+        let strings = i18n::strings(cx);
         let settings = state.settings();
         let status = SharedString::from(state.status_message().to_owned());
 
@@ -176,9 +177,9 @@ impl Render for KairoPanel {
                     toolchain.version,
                     toolchain.kind,
                     if toolchain.fingerprint.is_empty() {
-                        "UNVERIFIED"
+                        strings.unverified
                     } else {
-                        "fingerprinted"
+                        strings.fingerprinted
                     }
                 )
             })
@@ -222,24 +223,24 @@ impl Render for KairoPanel {
             .iter()
             .any(|toolchain| toolchain.version.starts_with("1.6"))
         {
-            "AVAILABLE (real JDK 6 imported)"
+            strings.jdk6_available
         } else {
-            "MISSING — 1.6 builds will fail closed"
+            strings.jdk6_missing
         };
         let toolchain_slots = format!(
             "LS JRE: {}\nCompiler JDK: {}\nTomcat JDK: {}\nSource/Target: {}/{}\nEncoding: {}\nJDK 6 gate: {}",
             if settings.language_server_java_home.is_empty() {
-                "<not set>"
+                strings.not_set
             } else {
                 &settings.language_server_java_home
             },
             if settings.compiler_java_home.is_empty() {
-                "<not set — JDK 6 required for 1.6>"
+                strings.not_set
             } else {
                 &settings.compiler_java_home
             },
             if settings.tomcat_java_home.is_empty() {
-                "<agent default>"
+                strings.agent_default
             } else {
                 &settings.tomcat_java_home
             },
@@ -262,9 +263,9 @@ impl Render for KairoPanel {
                     layout.root_path,
                     layout.build_system,
                     if layout.warnings.is_empty() {
-                        "no warnings"
+                        strings.no_warnings
                     } else {
-                        "has warnings"
+                        strings.has_warnings
                     }
                 )
             })
@@ -279,59 +280,83 @@ impl Render for KairoPanel {
             .p_3()
             .child(div().text_sm().child(status))
             .child(div().text_xs().child(SharedString::from(format!(
-                        "Encoding: {} | Hot reload: {}",
+                        "{}: {} | {}: {}",
+                        strings.encoding_label,
                         state
                             .encoding()
                             .map(|encoding| encoding.encoding.clone())
-                            .unwrap_or_else(|| "not detected".to_owned()),
+                            .unwrap_or_else(|| strings.not_detected.to_owned()),
+                        strings.hot_reload_label,
                         if state.hot_reload_mode().is_empty() {
-                            "idle"
+                            strings.idle
                         } else {
                             state.hot_reload_mode()
                         }
                     ))))
+            .when(!state.is_running(), |this| {
+                this.child(div().text_xs().child(strings.no_agent))
+            })
+            .when(state.projects().is_empty(), |this| {
+                this.child(div().text_xs().child(strings.no_project))
+            })
+            .when(
+                !state
+                    .toolchains()
+                    .iter()
+                    .any(|toolchain| toolchain.version.starts_with("1.6")),
+                |this| {
+                    this.child(
+                        div()
+                            .text_xs()
+                            .child(strings.toolchain_incompatible_guidance),
+                    )
+                },
+            )
             .when_some(state.last_error().map(SharedString::from), |this, error| {
-                this.child(
-                    div()
-                        .text_xs()
-                        .child(SharedString::from(format!("ERROR: {error}"))),
-                )
+                this.child(div().text_xs().child(SharedString::from(format!(
+                    "{} {error}",
+                    strings.error_prefix
+                ))))
             })
             .child(
                 div()
                     .flex()
                     .gap_2()
-                    .child(self.action_button("Compile", cx, |service, cx| {
+                    .child(self.action_button(strings.compile, cx, |service, cx| {
                         service.compile(false, cx).detach_and_log_err(cx);
                     }))
-                    .child(self.action_button("Clean Build", cx, |service, cx| {
+                    .child(self.action_button(strings.clean_build, cx, |service, cx| {
                         service.compile(true, cx).detach_and_log_err(cx);
                     }))
-                    .child(self.action_button("Build & Deploy", cx, |service, cx| {
-                        service.build_and_deploy(cx).detach_and_log_err(cx);
-                    }))
-                    .child(self.action_button("Deploy", cx, |service, cx| {
+                    .child(
+                        self.action_button(strings.build_and_deploy, cx, |service, cx| {
+                            service.build_and_deploy(cx).detach_and_log_err(cx);
+                        }),
+                    )
+                    .child(self.action_button(strings.deploy, cx, |service, cx| {
                         service.deploy(cx).detach_and_log_err(cx);
                     }))
-                    .child(self.action_button("Hot Deploy", cx, |service, cx| {
+                    .child(self.action_button(strings.hot_deploy, cx, |service, cx| {
                         service.hot_deploy(None, cx).detach_and_log_err(cx);
                     }))
-                    .child(self.action_button("Start Server", cx, |service, cx| {
+                    .child(self.action_button(strings.start_server, cx, |service, cx| {
                         service.start_server(false, cx).detach_and_log_err(cx);
                     }))
-                    .child(self.action_button("Debug", cx, |service, cx| {
+                    .child(self.action_button(strings.debug, cx, |service, cx| {
                         service.start_server(true, cx).detach_and_log_err(cx);
                     }))
-                    .child(self.action_button("Stop", cx, |service, cx| {
+                    .child(self.action_button(strings.stop_server, cx, |service, cx| {
                         let server_id = service.servers().last().map(|server| server.id.clone());
                         if let Some(server_id) = server_id {
                             service.stop_server(server_id, cx).detach_and_log_err(cx);
                         }
                     }))
-                    .child(self.action_button("Select Project", cx, |service, cx| {
-                        service.select_next_project(cx);
-                    }))
-                    .child(self.action_button("Open App", cx, |service, cx| {
+                    .child(
+                        self.action_button(strings.select_project, cx, |service, cx| {
+                            service.select_next_project(cx);
+                        }),
+                    )
+                    .child(self.action_button(strings.open_app, cx, |service, cx| {
                         if let Some(url) = service.application_url() {
                             cx.open_url(&url);
                         }
@@ -359,7 +384,7 @@ impl Render for KairoPanel {
                                     service.bootstrap(root, cx).detach_and_log_err(cx);
                                 });
                             }))
-                            .child("Scan Project"),
+                            .child(strings.scan_project),
                     )
                     .child(
                         div()
@@ -409,9 +434,9 @@ impl Render for KairoPanel {
                                         .detach_and_log_err(cx);
                                 });
                             }))
-                            .child("Save with Encoding"),
+                            .child(strings.save_with_encoding),
                     )
-                    .child(self.action_button("Refresh", cx, |service, cx| {
+                    .child(self.action_button(strings.refresh, cx, |service, cx| {
                         service.refresh(cx).detach_and_log_err(cx);
                     })),
             )
@@ -419,32 +444,31 @@ impl Render for KairoPanel {
                 div()
                     .flex()
                     .gap_1()
-                    .child(self.view_button("Status", KairoView::Status, cx))
-                    .child(self.view_button("Events", KairoView::Events, cx))
-                    .child(self.view_button("Deploys", KairoView::Deployments, cx))
-                    .child(self.view_button("Maven", KairoView::Maven, cx))
-                    .child(self.view_button("SQL", KairoView::Sql, cx))
-                    .child(self.view_button("Tests", KairoView::Tests, cx))
-                    .child(self.view_button("SVN", KairoView::Svn, cx)),
+                    .child(self.view_button(strings.status, KairoView::Status, cx))
+                    .child(self.view_button(strings.events, KairoView::Events, cx))
+                    .child(self.view_button(strings.deploys, KairoView::Deployments, cx))
+                    .child(self.view_button(strings.maven, KairoView::Maven, cx))
+                    .child(self.view_button(strings.sql, KairoView::Sql, cx))
+                    .child(self.view_button(strings.tests, KairoView::Tests, cx))
+                    .child(self.view_button(strings.svn, KairoView::Svn, cx)),
             )
             .child(
                 div()
                     .flex()
                     .gap_4()
                     .child(div().flex_1().child(SharedString::from(format!(
-                        "Projects (active marked *)\n{projects}"
+                        "{}\n{projects}",
+                        strings.projects_label
                     ))))
-                    .child(
-                        div()
-                            .flex_1()
-                            .child(SharedString::from(format!("Toolchains\n{toolchains}"))),
-                    )
+                    .child(div().flex_1().child(SharedString::from(format!(
+                        "{}\n{toolchains}",
+                        strings.toolchains_label
+                    ))))
                     .child(div().flex_1().child(SharedString::from(toolchain_slots)))
-                    .child(
-                        div()
-                            .flex_1()
-                            .child(SharedString::from(format!("Servers\n{servers}"))),
-                    ),
+                    .child(div().flex_1().child(SharedString::from(format!(
+                        "{}\n{servers}",
+                        strings.servers_label
+                    )))),
             )
             .child(
                 div()
@@ -452,15 +476,15 @@ impl Render for KairoPanel {
                     .flex_1()
                     .overflow_y_scroll()
                     .child(SharedString::from(format!(
-                        "Tomcat logs (last {MAX_VISIBLE_LOG_LINES})\n{logs}"
+                        "{} (last {MAX_VISIBLE_LOG_LINES})\n{logs}",
+                        strings.tomcat_logs_label
                     ))),
             )
             .when(!detected.is_empty(), |this| {
-                this.child(
-                    div()
-                        .text_xs()
-                        .child(SharedString::from(format!("Detected layouts:\n{detected}"))),
-                )
+                this.child(div().text_xs().child(SharedString::from(format!(
+                    "{}\n{detected}",
+                    strings.detected_layouts_label
+                ))))
             })
             .child(match self.active_view {
                 KairoView::Status => div()
@@ -468,7 +492,8 @@ impl Render for KairoPanel {
                     .flex_1()
                     .overflow_y_scroll()
                     .child(SharedString::from(format!(
-                        "Last operation result:\n{}",
+                        "{}\n{}",
+                        strings.last_result_label,
                         last_result.chars().take(4000).collect::<String>()
                     )))
                     .into_any_element(),

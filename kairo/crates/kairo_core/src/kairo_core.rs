@@ -7,6 +7,7 @@ pub mod client;
 pub mod domain;
 pub mod endpoints;
 pub mod events;
+pub mod i18n;
 pub mod save_hook;
 pub mod service;
 pub mod service_ext;
