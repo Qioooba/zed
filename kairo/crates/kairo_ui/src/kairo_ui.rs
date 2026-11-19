@@ -2,6 +2,7 @@
 //! workspace actions that drive compile / deploy / server operations.
 
 pub mod kairo_panel;
+pub mod kairo_views;
 
 use editor::Editor;
 use gpui::{App, Context, Window, prelude::*};

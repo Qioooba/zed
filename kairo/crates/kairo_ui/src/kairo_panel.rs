@@ -16,10 +16,23 @@ use workspace::{
 
 const MAX_VISIBLE_LOG_LINES: usize = 200;
 
+#[derive(Clone, Copy, PartialEq, Eq, Default)]
+enum KairoView {
+    #[default]
+    Status,
+    Events,
+    Deployments,
+    Maven,
+    Sql,
+    Tests,
+    Svn,
+}
+
 pub struct KairoPanel {
     workspace: gpui::WeakEntity<Workspace>,
     focus_handle: FocusHandle,
     _subscriptions: Vec<Subscription>,
+    active_view: KairoView,
 }
 
 impl KairoPanel {
@@ -34,6 +47,7 @@ impl KairoPanel {
             workspace,
             focus_handle: cx.focus_handle(),
             _subscriptions: subscriptions,
+            active_view: KairoView::default(),
         }
     }
 
@@ -46,6 +60,25 @@ impl KairoPanel {
             cx.new(|cx| KairoPanel::new(weak_workspace.clone(), window, cx))
         })?;
         Ok(panel)
+    }
+
+    fn view_button(
+        &self,
+        label: &'static str,
+        view: KairoView,
+        cx: &mut Context<Self>,
+    ) -> impl gpui::IntoElement {
+        div()
+            .id(label)
+            .px_2()
+            .py_1()
+            .rounded_md()
+            .border_1()
+            .on_click(cx.listener(move |panel, _event, _window, cx| {
+                panel.active_view = view;
+                cx.notify();
+            }))
+            .child(label)
     }
 
     fn action_button(
@@ -385,6 +418,18 @@ impl Render for KairoPanel {
             .child(
                 div()
                     .flex()
+                    .gap_1()
+                    .child(self.view_button("Status", KairoView::Status, cx))
+                    .child(self.view_button("Events", KairoView::Events, cx))
+                    .child(self.view_button("Deploys", KairoView::Deployments, cx))
+                    .child(self.view_button("Maven", KairoView::Maven, cx))
+                    .child(self.view_button("SQL", KairoView::Sql, cx))
+                    .child(self.view_button("Tests", KairoView::Tests, cx))
+                    .child(self.view_button("SVN", KairoView::Svn, cx)),
+            )
+            .child(
+                div()
+                    .flex()
                     .gap_4()
                     .child(div().flex_1().child(SharedString::from(format!(
                         "Projects (active marked *)\n{projects}"
@@ -417,17 +462,24 @@ impl Render for KairoPanel {
                         .child(SharedString::from(format!("Detected layouts:\n{detected}"))),
                 )
             })
-            .when(!last_result.is_empty(), |this| {
-                this.child(
-                    div()
-                        .id("kairo-last-result")
-                        .flex_1()
-                        .overflow_y_scroll()
-                        .child(SharedString::from(format!(
-                            "Last operation result:\n{}",
-                            last_result.chars().take(4000).collect::<String>()
-                        ))),
-                )
+            .child(match self.active_view {
+                KairoView::Status => div()
+                    .id("kairo-last-result")
+                    .flex_1()
+                    .overflow_y_scroll()
+                    .child(SharedString::from(format!(
+                        "Last operation result:\n{}",
+                        last_result.chars().take(4000).collect::<String>()
+                    )))
+                    .into_any_element(),
+                KairoView::Events => crate::kairo_views::events_view(cx).into_any_element(),
+                KairoView::Deployments => {
+                    crate::kairo_views::deployments_view(cx).into_any_element()
+                }
+                KairoView::Maven => crate::kairo_views::maven_view(cx).into_any_element(),
+                KairoView::Sql => crate::kairo_views::sql_view(cx).into_any_element(),
+                KairoView::Tests => crate::kairo_views::tests_view(cx).into_any_element(),
+                KairoView::Svn => crate::kairo_views::svn_view(cx).into_any_element(),
             })
     }
 }

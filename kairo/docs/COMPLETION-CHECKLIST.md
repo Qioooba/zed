@@ -63,7 +63,7 @@
 - [ ] 状态栏 / 工具栏 / 菜单结构
 - [ ] i18n en/zh-CN
 - [ ] 主题
-- [ ] SVN / SQL / Maven 视图
+- [x] SVN / SQL / Maven 视图 — KairoPanel 视图标签 + 真实 svn CLI tasks
 
 ## C. 验证
 

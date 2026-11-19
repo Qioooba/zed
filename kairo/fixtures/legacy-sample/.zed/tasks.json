@@ -20,5 +20,26 @@
     "args": ["war"],
     "cwd": "$ZED_WORKTREE_ROOT",
     "reveal": "always"
+  },
+  {
+    "label": "Kairo: Svn Status",
+    "command": "svn",
+    "args": ["status"],
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "reveal": "always"
+  },
+  {
+    "label": "Kairo: Svn Update",
+    "command": "svn",
+    "args": ["update"],
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "reveal": "always"
+  },
+  {
+    "label": "Kairo: Svn Commit",
+    "command": "svn",
+    "args": ["commit", "-m", "Kairo IDE commit"],
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "reveal": "always"
   }
 ]
