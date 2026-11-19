@@ -5,7 +5,9 @@ pub mod actions;
 pub mod agent;
 pub mod client;
 pub mod domain;
+pub mod endpoints;
 pub mod service;
+pub mod service_ext;
 pub mod settings;
 
 use gpui::App;

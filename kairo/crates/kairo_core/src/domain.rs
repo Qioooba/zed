@@ -208,7 +208,7 @@ pub struct BuildRequest {
     pub selected_files: Vec<String>,
 }
 
-#[derive(Clone, Debug, Default, Deserialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Diagnostic {
     #[serde(default)]
@@ -225,7 +225,7 @@ pub struct Diagnostic {
     pub message: String,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BuildResult {
     pub id: String,
@@ -334,7 +334,7 @@ pub struct LogLine {
     pub ordinal: u64,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EncodingDetection {
     pub file: String,

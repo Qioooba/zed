@@ -39,13 +39,14 @@ pub struct KairoService {
     servers: Vec<ServerResponse>,
     logs: Vec<LogLine>,
     detected: Vec<DetectedProjectLayout>,
-    active_workspace_id: Option<String>,
-    active_project_id: Option<String>,
-    worktree_root: Option<String>,
+    pub(crate) active_workspace_id: Option<String>,
+    pub(crate) active_project_id: Option<String>,
+    pub(crate) worktree_root: Option<String>,
     jdtls_descriptor: Option<crate::domain::LaunchDescriptor>,
     jdwp_port: u16,
-    status_message: String,
-    last_error: Option<String>,
+    pub(crate) status_message: String,
+    pub(crate) last_error: Option<String>,
+    pub(crate) last_result: Option<serde_json::Value>,
     encoding: Option<EncodingDetection>,
     hot_reload_mode: String,
     debug_gate: Option<DebugAdapterStatus>,
@@ -75,6 +76,7 @@ impl KairoService {
             jdwp_port: 8000,
             status_message: "Kairo agent is not running".to_owned(),
             last_error: None,
+            last_result: None,
             encoding: None,
             hot_reload_mode: String::new(),
             debug_gate: None,
@@ -108,6 +110,10 @@ impl KairoService {
 
     pub fn last_error(&self) -> Option<&str> {
         self.last_error.as_deref()
+    }
+
+    pub fn last_result(&self) -> Option<&serde_json::Value> {
+        self.last_result.as_ref()
     }
 
     pub fn workspaces(&self) -> &[WorkspaceRecord] {

@@ -216,6 +216,10 @@ impl Render for KairoPanel {
             jdk6_status,
         );
 
+        let last_result = state
+            .last_result()
+            .map(|value| serde_json::to_string_pretty(value).unwrap_or_default())
+            .unwrap_or_default();
         let detected = state
             .detected()
             .iter()
@@ -411,6 +415,18 @@ impl Render for KairoPanel {
                     div()
                         .text_xs()
                         .child(SharedString::from(format!("Detected layouts:\n{detected}"))),
+                )
+            })
+            .when(!last_result.is_empty(), |this| {
+                this.child(
+                    div()
+                        .id("kairo-last-result")
+                        .flex_1()
+                        .overflow_y_scroll()
+                        .child(SharedString::from(format!(
+                            "Last operation result:\n{}",
+                            last_result.chars().take(4000).collect::<String>()
+                        ))),
                 )
             })
     }

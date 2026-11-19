@@ -15,6 +15,21 @@ pub use kairo_panel::KairoPanel;
 pub fn init(cx: &mut App) {
     cx.observe_new(
         |workspace: &mut Workspace, _window: Option<&mut Window>, _cx: &mut Context<Workspace>| {
+            macro_rules! op {
+                ($action:ty, $name:expr) => {
+                    workspace.register_action(
+                        |_workspace: &mut Workspace,
+                         _action: &$action,
+                         _window: &mut Window,
+                         cx: &mut Context<Workspace>| {
+                            let service = KairoService::global(cx);
+                            service.update(cx, |service, cx| {
+                                service.invoke($name, cx).detach_and_log_err(cx);
+                            });
+                        },
+                    );
+                };
+            }
             workspace.register_action(
                 |_workspace: &mut Workspace,
                  _action: &actions::Compile,
@@ -254,6 +269,40 @@ pub fn init(cx: &mut App) {
                     workspace.toggle_panel_focus::<KairoPanel>(window, cx);
                 },
             );
+
+            op!(actions::Endpoints, "endpoints");
+            op!(actions::RestartAgent, "restart-agent");
+            op!(actions::OperationStatus, "operation-status");
+            op!(actions::LegacyImport, "legacy-import");
+            op!(actions::UnregisterProject, "unregister-project");
+            op!(actions::ListRunConfigurations, "list-run-configurations");
+            op!(actions::SaveRunConfigurations, "save-run-configurations");
+            op!(actions::LaunchRunConfiguration, "launch-run-configuration");
+            op!(actions::LaunchJobs, "launch-jobs");
+            op!(actions::CancelBuild, "cancel-build");
+            op!(actions::CustomBuild, "custom-build");
+            op!(actions::CustomBuildStatus, "custom-build-status");
+            op!(actions::AnalyzeAntClasspath, "ant-classpath");
+            op!(actions::DeploymentHistory, "deployment-history");
+            op!(actions::Deployment, "deployment");
+            op!(actions::RecoverServer, "recover-server");
+            op!(actions::RecoverableServers, "recoverable-servers");
+            op!(actions::PortDiagnostics, "port-diagnostics");
+            op!(actions::JdtlsStatus, "jdtls-status");
+            op!(actions::PrepareJdtls, "prepare-jdtls");
+            op!(actions::DebugTunnelConnect, "debug-tunnel-connect");
+            op!(actions::DebugTunnelDisconnect, "debug-tunnel-disconnect");
+            op!(actions::ProvisionDebugJdk, "provision-debug-jdk");
+            op!(actions::RunJava, "run-java");
+            op!(actions::DetectJava, "detect-java");
+            op!(actions::HotSwap, "hot-swap");
+            op!(actions::MavenDetect, "maven-detect");
+            op!(actions::MavenDependencies, "maven-dependencies");
+            op!(actions::MavenRun, "maven-run");
+            op!(actions::SqlTest, "sql-test");
+            op!(actions::Audit, "audit");
+            op!(actions::SearchEncoded, "search");
+            op!(actions::DetectFileEncoding, "encoding-detect");
         },
     )
     .detach();

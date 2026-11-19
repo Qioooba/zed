@@ -44,6 +44,72 @@ actions!(
         RefreshStatus,
         /// Reconnect to (or start) the runtime agent.
         ReconnectAgent,
+        /// Query agent discovery information.
+        Endpoints,
+        /// Restart the runtime agent with port handoff.
+        RestartAgent,
+        /// Query operation/idempotency status.
+        OperationStatus,
+        /// Import a project through the legacy alias endpoint.
+        LegacyImport,
+        /// Unregister the active project.
+        UnregisterProject,
+        /// List run configurations.
+        ListRunConfigurations,
+        /// Save run configurations.
+        SaveRunConfigurations,
+        /// Launch a run configuration.
+        LaunchRunConfiguration,
+        /// Poll asynchronous launch jobs.
+        LaunchJobs,
+        /// Cancel the current build.
+        CancelBuild,
+        /// Run an arbitrary custom build command.
+        CustomBuild,
+        /// Poll custom build status.
+        CustomBuildStatus,
+        /// Analyze an Ant build.xml classpath.
+        AnalyzeAntClasspath,
+        /// Show deployment history.
+        DeploymentHistory,
+        /// Show one deployment.
+        Deployment,
+        /// Recover a crashed server.
+        RecoverServer,
+        /// List recoverable servers.
+        RecoverableServers,
+        /// Diagnose a TCP port.
+        PortDiagnostics,
+        /// Show JDT LS status.
+        JdtlsStatus,
+        /// Prepare the JDT LS distribution.
+        PrepareJdtls,
+        /// Connect an SSH JDWP tunnel.
+        DebugTunnelConnect,
+        /// Disconnect the SSH JDWP tunnel.
+        DebugTunnelDisconnect,
+        /// Provision the host JDK required by the JDI bridge.
+        ProvisionDebugJdk,
+        /// Run a Java main/test class.
+        RunJava,
+        /// Detect main/test methods in a Java file.
+        DetectJava,
+        /// Redefine a loaded class (JDWP hot swap).
+        HotSwap,
+        /// Detect a Maven project.
+        MavenDetect,
+        /// Show the Maven dependency tree.
+        MavenDependencies,
+        /// Run a Maven lifecycle task.
+        MavenRun,
+        /// Test an Oracle SQL connection.
+        SqlTest,
+        /// Show the agent audit log.
+        Audit,
+        /// Encoding-aware full-text search.
+        SearchEncoded,
+        /// Detect the active file's on-disk encoding.
+        DetectFileEncoding,
     ]
 );
 

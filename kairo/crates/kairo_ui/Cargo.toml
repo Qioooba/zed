@@ -18,4 +18,5 @@ editor.workspace = true
 gpui.workspace = true
 icons.workspace = true
 kairo_core.workspace = true
+serde_json.workspace = true
 workspace.workspace = true

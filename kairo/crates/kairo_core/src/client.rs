@@ -304,12 +304,12 @@ impl KairoClient {
         Ok(futures::stream::empty())
     }
 
-    async fn get<T: serde::de::DeserializeOwned>(&self, path: &str) -> Result<T> {
+    pub(crate) async fn get<T: serde::de::DeserializeOwned>(&self, path: &str) -> Result<T> {
         self.request_json(Method::GET, path, None::<&serde_json::Value>)
             .await
     }
 
-    async fn post<T: serde::de::DeserializeOwned, B: serde::Serialize + ?Sized>(
+    pub(crate) async fn post<T: serde::de::DeserializeOwned, B: serde::Serialize + ?Sized>(
         &self,
         path: &str,
         body: &B,
@@ -317,12 +317,12 @@ impl KairoClient {
         self.request_json(Method::POST, path, Some(body)).await
     }
 
-    async fn delete<T: serde::de::DeserializeOwned>(&self, path: &str) -> Result<T> {
+    pub(crate) async fn delete<T: serde::de::DeserializeOwned>(&self, path: &str) -> Result<T> {
         self.request_json(Method::DELETE, path, None::<&serde_json::Value>)
             .await
     }
 
-    async fn put<T: serde::de::DeserializeOwned, B: serde::Serialize + ?Sized>(
+    pub(crate) async fn put<T: serde::de::DeserializeOwned, B: serde::Serialize + ?Sized>(
         &self,
         path: &str,
         body: &B,
